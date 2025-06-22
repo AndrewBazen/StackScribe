@@ -3,6 +3,8 @@ import { MdEditor } from "./components/MpEditor";
 import { useState, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { NavIconButton } from "./components/NavIconButton";
+import StackScribeIcon from "../src-tauri/icons/stackscribe.svg?react";
 
 const DIVIDER_SIZE = 6; // px
 
@@ -36,6 +38,10 @@ function App() {
     <div className="app" style={{ height: "100vh" }}>
       {/* LEFT PANEL */}
       <div className="side-panel" style={{ width: leftWidth }}>
+        <div className="side-panel-nav">
+        <NavIconButton icon={<StackScribeIcon />} onClick={() => {}} />
+        <NavIconButton icon={<StackScribeIcon />} onClick={() => {}} />
+        </div>
         <div className="side-panel-header">
           <h1>Side Panel</h1>
         </div>
