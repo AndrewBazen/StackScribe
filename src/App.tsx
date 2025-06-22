@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { NavIconButton } from "./components/NavIconButton";
-import StackScribeIcon from "../src-tauri/icons/stackscribe.svg?react";
+import StackScribeIcon from "../src-tauri/icons/SSlogo.svg?react";
 
 const DIVIDER_SIZE = 6; // px
 

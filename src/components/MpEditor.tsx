@@ -13,8 +13,6 @@ const md = markdown({
   codeLanguages: languages,
 });
 
-
-
 const getFence = (view: EditorView): SyntaxNode | null => {
     const { state } = view, { from } = state.selection.main;
     const tree = syntaxTree(state);
@@ -51,7 +49,7 @@ export function MdEditor({ value, setValue }: MdEditorProps) {
   return (
     <CodeMirror
       value={value}
-      extensions={[md, runKeymap, TextToMarkdown, basicSetup]}
+      extensions={[md, runKeymap, TextToMarkdown, basicSetup, EditorView.lineWrapping]}
       onChange={(v) => setValue(v)}
       height="100vh"
       width="100%"

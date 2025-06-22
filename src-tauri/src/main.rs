@@ -3,5 +3,5 @@
 
 
 fn main() {
-    grimoire_ts_lib::run()
+    stackscribe_lib::run()
 }
