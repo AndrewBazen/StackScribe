@@ -19,28 +19,15 @@
     ],
     "security": {
       "csp": null
-    },
-    "menu": [
-      {
-        "label": "StackScribe",
-        "submenu": [
-          {
-            "label": "About StackScribe",
-            "role": "about"
-          }
-        ]
-      }
-    ]
+    }
   },
   "bundle": {
     "active": true,
     "targets": "all",
     "icon": [
-      "icons/SSlogo.svg",
-      "icons/SSlogo.png",
-      "icons/SSicon.png",
-      "icons/SSicon.icns",
-      "icons/SSicon.ico"
+      "icons/icon.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
     ]
   }
 }
