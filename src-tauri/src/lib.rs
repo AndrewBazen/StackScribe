@@ -3,6 +3,9 @@ mod types;
 
 use types::{Archive, Tome, Entry};
 
+// --------- app commands ---------
+
+// get the app path
 #[tauri::command]
 async fn get_app_path() -> Result<String, String> {
     // Use the project root (parent of `src-tauri`) as the base so that
@@ -25,11 +28,13 @@ async fn get_app_path() -> Result<String, String> {
     Ok(path)
 }
 
+// test round trip
 #[tauri::command]
 async fn echo(input: String) -> String {
     input.chars().rev().collect() //test round trip
 }
 
+// run code inline in the editor
 #[tauri::command]
 async fn run_code(code: String) -> Result<String, String> {
     let output = Command::new("node")
@@ -41,20 +46,14 @@ async fn run_code(code: String) -> Result<String, String> {
 }
 
 // --------- archive commands ---------
-// create the archive using the db and return the archive
+// create a new archive
 #[tauri::command]
 async fn create_archive( archive_name: String) -> Result<Archive, String> {
     let archive = Archive::new(archive_name.clone()).await;
     Ok(archive)
 }
 
-#[tauri::command]
-async fn create_tome(mut archive: Archive, tome_name: String) -> Result<Tome, String> {
-    let tome = Tome::new(tome_name.clone(), &archive);
-    archive.tomes.push(tome.clone());
-    Ok(tome)
-}
-
+// get the archives
 #[tauri::command]
 async fn get_archives() -> Result<Vec<Archive>, String> {
     let base = PathBuf::from(get_app_path().await?);
@@ -82,38 +81,9 @@ async fn get_archives() -> Result<Vec<Archive>, String> {
         .collect::<Vec<Archive>>();
 
     Ok(archives)
-}
+}  
 
-#[tauri::command]
-async fn get_tomes(archive: Archive) -> Result<Vec<Tome>, String> {
-    let tomes = archive.get_tomes();
-    Ok(tomes)
-}
-
-#[tauri::command]
-async fn create_entry(entry_name: String, mut tome: Tome) -> Result<Entry, String> {
-    tome.add_entry(entry_name.clone());
-    Ok(tome.get_entry(entry_name.clone()))
-}
-
-#[tauri::command]
-async fn get_entries(tome: Tome) -> Result<Vec<Entry>, String> {
-    let entries = tome.get_entries();
-    Ok(entries)
-}
-
-#[tauri::command]
-async fn update_entry(mut tome: Tome, entry: Entry, content: String) -> Result<Entry, String> {
-    tome.update_entry(entry.clone(), content.clone());
-    Ok(tome.get_entry(entry.name.clone()))
-}
-
-#[tauri::command]
-async fn delete_entry(entry: Entry, mut tome: Tome) -> Result<(), String> {
-    tome.remove_entry(entry);
-    Ok(())
-}
-
+// get the archive for an archive_id
 #[tauri::command]
 async fn get_archive(archive_id: String) -> Result<Archive, String> {
     let archives = get_archives().await?;
@@ -121,6 +91,52 @@ async fn get_archive(archive_id: String) -> Result<Archive, String> {
     Ok(archive)
 }
 
+// delete the archive for an archive_id
+#[tauri::command]
+async fn delete_archive(mut archives: Vec<Archive>, archive_id: String) -> Result<(), String> {
+    archives.retain(|a| a.id != archive_id);
+    Ok(())
+}
+
+// --------- tome commands ---------
+
+// create a new tome for an archive
+#[tauri::command]
+async fn create_tome(mut archive: Archive, tome_name: String) -> Result<Tome, String> {
+    let tome = Tome::new(tome_name.clone(), &archive);
+    archive.tomes.push(tome.clone());
+    Ok(tome)
+}
+
+// get the tomes for an archive
+#[tauri::command]
+async fn get_tomes(archive: Archive) -> Result<Vec<Tome>, String> {
+    let tomes = archive.get_tomes();
+    Ok(tomes)
+}
+
+// set the tomes for an archive
+#[tauri::command]
+async fn set_tomes(mut archive: Archive, tomes: Vec<Tome>) -> Result<(), String> {
+    archive.set_tomes(tomes);
+    Ok(())
+}
+
+// get the last selected tome for an archive
+#[tauri::command]
+async fn get_last_selected_tome(archive: Archive) -> Result<Tome, String> {
+    let tome = archive.get_last_selected_tome();
+    Ok(tome.unwrap())
+}
+
+// set the last selected tome for an archive
+#[tauri::command]
+async fn set_last_selected_tome(mut archive: Archive, tome: Tome) -> Result<(), String> {
+    archive.set_last_selected_tome(tome);
+    Ok(())
+}
+
+// get the tome for an archive
 #[tauri::command]
 async fn get_tome(tome_id: String, archive_id: String) -> Result<Tome, String> {
     let archive = get_archive(archive_id.clone()).await?;
@@ -128,33 +144,81 @@ async fn get_tome(tome_id: String, archive_id: String) -> Result<Tome, String> {
     Ok(tome)
 }
 
-#[tauri::command]
-async fn get_entry(entry_name: String, tome: Tome) -> Result<Entry, String> {
-    let entry = tome.get_entry(entry_name.clone());
-    Ok(entry)
-}
-
+// delete the tome for an archive
 #[tauri::command]
 async fn delete_tome(mut archive: Archive, tome_id: String) -> Result<(), String> {
     archive.remove_tome(tome_id.clone());
     Ok(())
 }
 
+// --------- entry commands ---------
+
+// get the entry for a tome
 #[tauri::command]
-async fn delete_archive(mut archives: Vec<Archive>, archive_id: String) -> Result<(), String> {
-    archives.retain(|a| a.id != archive_id);
+async fn get_entry(entry_name: String, tome: Tome) -> Result<Entry, String> {
+    let entry = tome.get_entry(entry_name.clone());
+    Ok(entry)
+}
+
+// create a new entry for a tome
+#[tauri::command]
+async fn create_entry(entry_name: String, mut tome: Tome) -> Result<Entry, String> {
+    tome.add_entry(entry_name.clone());
+    Ok(tome.get_entry(entry_name.clone()))
+}
+
+// get the entries for a tome
+#[tauri::command]
+async fn get_entries(tome: Tome) -> Result<Vec<Entry>, String> {
+    let entries = tome.get_entries();
+    Ok(entries)
+}
+
+// save the content of an entry (called from frontend when user presses Save)
+#[tauri::command]
+async fn save_entry(entry: Entry, content: String) -> Result<Entry, String> {
+    entry.set_content(&content)?;
+    Ok(entry)
+}
+
+// delete an entry
+#[tauri::command]
+async fn delete_entry(entry: Entry, mut tome: Tome) -> Result<(), String> {
+    tome.remove_entry(entry);
     Ok(())
 }
 
+// get the content of an entry
+#[tauri::command]
+async fn get_entry_content(entry: Entry) -> Result<String, String> {
+    let content = entry.get_content();
+    Ok(content)
+}
 
+// set the last selected entry for a tome
+#[tauri::command]
+async fn set_last_selected_entry(mut tome: Tome, entry: Entry) -> Result<(), String> {
+    tome.set_last_selected_entry(entry);
+    Ok(())
+}
+
+// get the last selected entry for a tome
+#[tauri::command]
+async fn get_last_selected_entry(tome: Tome) -> Result<Entry, String> {
+    let entry = tome.get_last_selected_entry();
+    Ok(entry.unwrap())
+}
+
+// --------- main entry point ---------
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![get_app_path, echo, run_code, create_archive, create_tome, create_entry,
-             get_archives, get_tomes, get_entries, update_entry, delete_entry,
-             get_archive, get_tome, get_entry, delete_tome, delete_archive])
+             get_archives, get_tomes, set_tomes, get_last_selected_tome, set_last_selected_tome, get_tome,
+             get_entries, save_entry, delete_entry, get_entry, get_last_selected_entry, set_last_selected_entry,
+             get_entry_content, get_archive, get_tome, delete_tome, delete_archive])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

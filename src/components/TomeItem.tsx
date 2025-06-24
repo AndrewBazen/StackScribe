@@ -1,13 +1,15 @@
 
+import { ChevronDownIcon } from "@radix-ui/react-icons";
 import { Tome } from "../types/tome";
 
 interface TomeItemProps {
     tome: Tome;
     onTomeClick: (tome: Tome) => void;
+    isExpanded: boolean;
 }
 
 export default function TomeItem(props: TomeItemProps) {
-    const { tome, onTomeClick } = props;
+    const { tome, onTomeClick, isExpanded } = props;
 
     const handleTomeClick = () => {
         // gets the entries that are in the selected tome
@@ -17,7 +19,10 @@ export default function TomeItem(props: TomeItemProps) {
 
     return (
         <div className="tome-item" onClick={handleTomeClick}>
-            {tome.name}
+            <div className="tome-item-expand" onClick={handleTomeClick}>
+                <ChevronDownIcon className={`${isExpanded ? "rotate-90" : ""}`}/>
+            </div>
+            <div className="tome-item-title">{tome.name}</div>
         </div>
     );
 }

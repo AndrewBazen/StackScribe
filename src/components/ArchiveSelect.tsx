@@ -26,36 +26,34 @@ const CreateArchiveDialog = (props: { onCreateArchive: (archive: Archive) => voi
     };
 
     return (
-        <div className="create-archive-dialog">
         <Dialog.Root>
             <Dialog.Trigger asChild>
-                <button type="button" className="create-archive-button" aria-label="Create Archive">
+                <button type="button" id="create-archive-btn" className="button" aria-label="Create Archive">
                     <PlusIcon />
                 </button>
             </Dialog.Trigger>
             <Dialog.Portal>
                 <Dialog.Overlay className="dialog-overlay" />
                 <Dialog.Content className="dialog-content">
-                    <Dialog.Title>New Archive</Dialog.Title>
+                    <Dialog.Title className="dialog-title">New Archive</Dialog.Title>
                     <Dialog.Description className="dialog-description">
                         Create a new archive to store your documents.
                     </Dialog.Description>
-                    <fieldset className="dialog-fieldset">
-                        <label className="dialog-label">Archive Name</label>
-                        <input type="text" placeholder="Archive Name" className="dialog-input" ref={archiveNameRef} />
+                    <fieldset id="create-archive-fieldset" className="dialog-fieldset">
+                        <label id="create-archive-label" className="dialog-label">Archive Name</label>
+                        <input id="create-archive-input" type="text" placeholder="Archive Name" className="input" ref={archiveNameRef} />
                     </fieldset>
-                    <div style={{ display: "flex", gap: "10px" }}>
+                    <div id="create-archive-buttons" className="dialog-buttons">
                         <Dialog.Close asChild>
-                            <button className="create-button" aria-label="Create" onClick={handleCreateArchive}>Create</button>
+                            <button id="create-btn" className="button" aria-label="Create" onClick={handleCreateArchive}>Create</button>
                         </Dialog.Close>
                     </div>
                     <Dialog.Close asChild>
-                        <button className="cross-button" aria-label="Close"><Cross2Icon /></button>
+                            <button id="close-btn" className="button" aria-label="Close"><Cross2Icon /></button>
                     </Dialog.Close>
                 </Dialog.Content>
             </Dialog.Portal>
         </Dialog.Root>
-        </div>
     );
 };
 
@@ -67,9 +65,11 @@ export default function ArchiveSelect(props: ArchiveSelectProps) {
     };
 
     return (
-        <div className="archive-select" style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+        <div id="archive-select" className="view">
             <CreateArchiveDialog onCreateArchive={onCreateArchive} />
-            <ArchiveList archives={archives} onArchiveClick={handleArchiveClick} />
+            <div id="archive-list-container" className="view">
+                <ArchiveList archives={archives} onArchiveClick={handleArchiveClick} />
+            </div>
         </div>
     );
 }

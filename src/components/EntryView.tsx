@@ -9,7 +9,7 @@ interface EntryViewProps {
 export default function EntryView(props: EntryViewProps) {
     const { entries, onEntryClick } = props;
     return (
-        <div>
+        <div id="entry-view" className="panel">
             <EntryList entries={entries} onEntryClick={onEntryClick} />
         </div>
     );

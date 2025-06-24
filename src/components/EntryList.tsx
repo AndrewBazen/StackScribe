@@ -1,4 +1,6 @@
 import { Entry } from "../types/entry";
+import * as ScrollArea from "@radix-ui/react-scroll-area";
+import EntryItem from "./EntryItem";
 
 interface EntryListProps {
     entries: Entry[];
@@ -8,10 +10,12 @@ interface EntryListProps {
 export default function EntryList(props: EntryListProps) {
     const { entries, onEntryClick } = props;
     return (
-        <ul>
-            {entries.map((entry) => (
-                <li key={entry.name} onClick={() => onEntryClick(entry)}>{entry.name}</li>
-            ))}
-        </ul>
+        <ScrollArea.Root className="entry-list">
+            <ScrollArea.Viewport className="entry-list-viewport">
+                {entries.map((entry) => (
+                    <EntryItem key={entry.name} entry={entry} onEntryClick={onEntryClick} />
+                ))}
+            </ScrollArea.Viewport>
+        </ScrollArea.Root>
     );
 }

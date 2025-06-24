@@ -15,25 +15,34 @@ pub struct Entry {
     pub path: PathBuf,
     pub content: String,
     pub tome_id: String,
+    pub dirty: bool,
 }
 
 impl Entry {
     pub fn new(name: String, tome_path: &PathBuf, tome_id: String) -> Self {
         let path = tome_path.join("entries").join(format!("{}.md", name));
+        // Ensure the directory exists
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+
         let content = String::from("Write your entry here...");
-        Self { name, path, content, tome_id }
+        // Write initial content if the file doesn't already exist
+        if !path.exists() {
+            let _ = std::fs::write(&path, &content);
+        }
+
+        Self { name, path, content, tome_id, dirty: false }
     }
 
-    pub fn get_path(&self) -> PathBuf {
-        self.path.clone()
+    /// Persist new markdown content to disk
+    pub fn set_content(&self, content: &str) -> Result<(), String> {
+        fs::write(&self.path, content).map_err(|e| e.to_string())
     }
 
-
-    pub fn set_content(&mut self, content: String) {
-        std::fs::write(self.get_path(), content).unwrap();
+    pub fn get_content(&self) -> String {
+        std::fs::read_to_string(self.path.clone()).unwrap_or_else(|_| self.content.clone())
     }
-
-
 }
 
 
@@ -44,6 +53,7 @@ pub struct Tome {
     pub path: PathBuf,
     pub archive_id: String,
     pub entries: Vec<Entry>,
+    pub last_selected_entry: Option<Entry>,
 }
 
 impl Tome {
@@ -54,7 +64,7 @@ impl Tome {
             std::fs::create_dir_all(&path).unwrap();
             std::fs::create_dir_all(&path.join("entries")).unwrap();
         }
-        Self { id, name, path, archive_id: archive.id.clone(), entries: Vec::new() }
+        Self { id, name, path, archive_id: archive.id.clone(), entries: Vec::new(), last_selected_entry: None }
     }
 
     pub fn get_entries(&self) -> Vec<Entry> {
@@ -75,8 +85,12 @@ impl Tome {
         self.entries.retain(|e| e.name != entry.name);
     }
 
-    pub fn update_entry(&mut self, mut entry: Entry, content: String) {  
-        entry.set_content(content.clone());
+    pub fn set_last_selected_entry(&mut self, entry: Entry) {
+        self.last_selected_entry = Some(entry);
+    }
+
+    pub fn get_last_selected_entry(&self) -> Option<Entry> {
+        self.last_selected_entry.clone()
     }
 }
 
@@ -86,6 +100,7 @@ pub struct Archive {
     pub name: String,
     pub path: PathBuf,
     pub tomes: Vec<Tome>,
+    pub last_selected_tome: Option<Tome>,
 }
 
 impl Archive {
@@ -107,7 +122,7 @@ impl Archive {
         if let Err(e) = fs::write(&meta_path, meta.to_string()) {
             eprintln!("Failed to write archive metadata: {e}");
         }
-        Self { id, name, path, tomes: Vec::new() }
+        Self { id, name, path, tomes: Vec::new(), last_selected_tome: None }
     }
 
     /// Load an existing archive from the directory path by reading its metadata file.
@@ -128,7 +143,11 @@ impl Archive {
             .ok_or("archive.json missing 'name'")?
             .to_string();
 
-        Ok(Self { id, name, path: path.to_path_buf(), tomes: Vec::new() })
+        Ok(Self { id, name, path: path.to_path_buf(), tomes: Vec::new(), last_selected_tome: None })
+    }
+
+    pub fn set_tomes(&mut self, tomes: Vec<Tome>) {
+        self.tomes = tomes;
     }
 
     pub fn get_tomes(&self) -> Vec<Tome> {
@@ -145,4 +164,11 @@ impl Archive {
         self.tomes.retain(|t| t.id != id);
     }
 
+    pub fn set_last_selected_tome(&mut self, tome: Tome) {
+        self.last_selected_tome = Some(tome);
+    }
+
+    pub fn get_last_selected_tome(&self) -> Option<Tome> {
+        self.last_selected_tome.clone()
+    }
 }

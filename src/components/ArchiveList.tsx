@@ -9,10 +9,10 @@ interface ArchiveListProps {
 export default function ArchiveList(props: ArchiveListProps) {
     const { archives, onArchiveClick } = props;
     return (
-        <ScrollArea.Root className="archive-list">
-            <ScrollArea.Viewport className="archive-list-viewport">
+        <ScrollArea.Root className="list">
+            <ScrollArea.Viewport className="list-viewport">
                 {archives.map((archive) => (
-                    <div key={archive.name} onClick={() => onArchiveClick(archive)} className="archive-list-item" style={{ width: "100%", height: "100%" }}>
+                    <div key={archive.name} onClick={() => onArchiveClick(archive)} className="list-item">
                         {archive.name}
                     </div>
                 ))}

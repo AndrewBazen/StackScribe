@@ -25,12 +25,12 @@ export default function StartWindow(props: {
         <Dialog.Root open={isOpen} onOpenChange={setIsOpen}>
             <Dialog.Portal>
                 <Dialog.Overlay className="dialog-overlay" />
-                <Dialog.Content className="start-window" style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", gap: "10px", alignItems: "center", justifyContent: "center" }}>
-                    <Dialog.Title>StackScribe</Dialog.Title>
+                <Dialog.Content className="dialog-content" >
+                    <Dialog.Title className="dialog-title">StackScribe</Dialog.Title>
                     <Dialog.Description className="dialog-description">
                         Select an archive to get started.
                     </Dialog.Description>
-                    <div className="start-window-content" style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                    <div id="start-content-inner" className="dialog-content-inner">
                         <ArchiveSelect
                             archives={archives}
                             onArchiveClick={handleArchiveClick}
