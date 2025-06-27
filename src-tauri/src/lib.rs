@@ -50,7 +50,7 @@ async fn run_code(code: String) -> Result<String, String> {
 #[tauri::command]
 async fn create_archive( archive_name: String, tome_name: String) -> Result<Archive, String> {
     let mut archive = Archive::new(archive_name.clone()).await;
-    archive.setup_archive(archive_name.clone(), tome_name.clone());
+    archive.setup_archive(tome_name.clone());
     archive.update_metadata();
     Ok(archive)
 }
@@ -159,8 +159,8 @@ async fn delete_tome(mut archive: Archive, tome_id: String) -> Result<(), String
 
 // get the entry for a tome
 #[tauri::command]
-async fn get_entry(entry_name: String, tome: Tome) -> Result<Entry, String> {
-    let entry = tome.get_entry(entry_name.clone());
+async fn get_entry(entry_id: String, tome: Tome) -> Result<Entry, String> {
+    let entry = tome.get_entry_by_id(entry_id.clone()).ok_or_else(|| format!("Entry with id '{}' not found", entry_id))?;
     Ok(entry)
 }
 
@@ -168,7 +168,11 @@ async fn get_entry(entry_name: String, tome: Tome) -> Result<Entry, String> {
 #[tauri::command]
 async fn create_entry(entry_name: String, mut tome: Tome) -> Result<Entry, String> {
     tome.add_entry(entry_name.clone());
-    Ok(tome.get_entry(entry_name.clone()))
+    // Get the most recently added entry (last in the vector)
+    tome.entries.last()
+        .cloned()
+        .ok_or_else(|| "Failed to create entry".to_string())
+    
 }
 
 // get the entries for a tome
