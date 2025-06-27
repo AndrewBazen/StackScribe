@@ -1,8 +1,6 @@
 import "./App.css";
 import { MdEditor } from "./components/MpEditor";
 import { useState, useEffect } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { NavIconButton } from "./components/NavIconButton";
 import EntryView from "./components/EntryView";
 import { Entry } from "./types/entry";
@@ -15,6 +13,7 @@ import { AppMenuBar } from "./components/AppMenuBar";
 import { NewTome, NewEntry, Save, SaveAll, Close, Preferences,
   SaveShortcut, NewEntryShortcut, SelectTome, MarkEntryDirty,
   SelectArchive, CreateArchive, OpenArchive, SelectEntry, GetArchives, GetEntryContent, NewTomeShortcut, OpenTome } from "./Utils/AppUtils";
+import PreviewPanel from "./components/PreviewPanel";
 
 const DIVIDER_SIZE = 2; // px
 
@@ -261,18 +260,8 @@ function App() {
         </div>
       </div>
 
-      {/* divider */}
-      <div className="divider" style={{ width: DIVIDER_SIZE }} />
-
       {/* entry view that is opened when a tome is clicked */}
       {tome && <div className="entry-view-panel"><EntryView entries={entries} onEntryClick={handleEntryClick} /></div>}
-
-      {/* DIVIDER LEFT */}
-      <div
-        className="divider"
-        onMouseDown={() => setDragging("left")}
-        style={{ width: DIVIDER_SIZE }}
-      />
 
       {/* EDITOR (flex 1) */}
       <div id="editor-container" 
@@ -295,7 +284,8 @@ function App() {
         className="panel"
         style={{ width: rightWidth, overflow: "auto", padding: "1rem" }}
       >
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown>
+        <PreviewPanel markdown={markdown} />
+      
       </div>
     </div>
     </>

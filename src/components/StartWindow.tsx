@@ -30,7 +30,7 @@ export default function StartWindow(props: {
                     <Dialog.Description className="dialog-description">
                         Select an archive to get started.
                     </Dialog.Description>
-                    <div id="start-content-inner" className="dialog-content-inner">
+                    <div className="dialog-content-inner">
                         <ArchiveSelect
                             archives={archives}
                             onArchiveClick={handleArchiveClick}

@@ -1,0 +1,11 @@
+declare module "remark-breaks";
+declare module "remark-frontmatter";
+declare module "remark-code-blocks";
+declare module "remark-gemoji";
+declare module "remark-rehype";
+declare module "remark-syntax-highlighter";
+declare module "remark-parse";
+declare module "lowlight";
+declare module "react-syntax-highlighter";
+declare module "react-syntax-highlighter/dist/esm/styles/prism";
+declare module "react-markdown/lib/ast-to-react";

@@ -8,6 +8,7 @@ import { basicSetup } from "codemirror";
 import { TextToMarkdown } from "../Utils/MarkdownTools";
 import { invoke } from "@tauri-apps/api/core";
 import { useState, useEffect } from "react";
+import { myTheme } from "../assets/theme";
 
 const md = markdown({
   base: markdownLanguage,
@@ -58,14 +59,14 @@ export function MdEditor({ value, onEntryChange }: MdEditorProps) {
     <CodeMirror
       className="editor"
       value={markdown}
-      extensions={[md, runKeymap, TextToMarkdown, basicSetup, EditorView.lineWrapping]}
+      extensions={[md, runKeymap, TextToMarkdown, basicSetup, EditorView.lineWrapping, myTheme]}
+      theme={myTheme}
       onChange={(v) => {
         setMarkdown(v);
         onEntryChange(v);
       }}
       height="100vh"
       width="100%"
-      theme="dark"
     />
   );
 }

@@ -28,7 +28,7 @@ const CreateArchiveDialog = (props: { onCreateArchive: (archive: Archive) => voi
     return (
         <Dialog.Root>
             <Dialog.Trigger asChild>
-                <button type="button" id="create-archive-btn" className="button" aria-label="Create Archive">
+                <button className="create-archive-button" aria-label="Create Archive">
                     <PlusIcon />
                 </button>
             </Dialog.Trigger>
@@ -39,17 +39,17 @@ const CreateArchiveDialog = (props: { onCreateArchive: (archive: Archive) => voi
                     <Dialog.Description className="dialog-description">
                         Create a new archive to store your documents.
                     </Dialog.Description>
-                    <fieldset id="create-archive-fieldset" className="dialog-fieldset">
-                        <label id="create-archive-label" className="dialog-label">Archive Name</label>
-                        <input id="create-archive-input" type="text" placeholder="Archive Name" className="input" ref={archiveNameRef} />
+                    <fieldset className="dialog-fieldset">
+                        <label className="dialog-label">Archive Name</label>
+                        <input type="text" placeholder="Archive Name" className="input" ref={archiveNameRef} />
                     </fieldset>
                     <div id="create-archive-buttons" className="dialog-buttons">
                         <Dialog.Close asChild>
-                            <button id="create-btn" className="button" aria-label="Create" onClick={handleCreateArchive}>Create</button>
+                            <button className="create-button" aria-label="Create" onClick={handleCreateArchive}>Create</button>
                         </Dialog.Close>
                     </div>
                     <Dialog.Close asChild>
-                            <button id="close-btn" className="button" aria-label="Close"><Cross2Icon /></button>
+                            <button className="close-button" aria-label="Close"><Cross2Icon /></button>
                     </Dialog.Close>
                 </Dialog.Content>
             </Dialog.Portal>
