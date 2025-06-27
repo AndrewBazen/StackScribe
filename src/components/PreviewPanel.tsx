@@ -1,6 +1,6 @@
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import ReactMarkdown from "react-markdown";
-import { previewTheme } from "../assets/previewTheme";
+import { previewTheme } from "../Themes/previewTheme";
 
 interface PreviewPanelProps {
     markdown: string;

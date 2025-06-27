@@ -11,6 +11,7 @@ const ARCHIVE_DIR: &str = "../archives";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entry {
+    pub id: String,
     pub name: String,
     pub path: PathBuf,
     pub content: String,
@@ -20,6 +21,7 @@ pub struct Entry {
 
 impl Entry {
     pub fn new(name: String, tome_path: &PathBuf, tome_id: String) -> Self {
+        let id = Uuid::new_v4().to_string();
         let path = tome_path.join("entries").join(format!("{}.md", name));
         // Ensure the directory exists
         if let Some(parent) = path.parent() {
@@ -32,7 +34,11 @@ impl Entry {
             let _ = std::fs::write(&path, &content);
         }
 
-        Self { name, path, content, tome_id, dirty: false }
+        Self { id, name, path, content, tome_id, dirty: false }
+    }
+
+    pub fn get_name(&self) -> String {
+        self.name.clone()
     }
 
     /// Persist new markdown content to disk
@@ -63,17 +69,24 @@ impl Tome {
         if !path.exists() {
             std::fs::create_dir_all(&path).unwrap();
             std::fs::create_dir_all(&path.join("entries")).unwrap();
+            let entry = Entry::new(String::from("Untitled"), &path, id.clone());
+            let entries = vec![entry.clone()];
+            let last_selected_entry = Some(entry.clone());
         }
-        Self { id, name, path, archive_id: archive.id.clone(), entries: Vec::new(), last_selected_entry: None }
+        Self { id, name, path, archive_id: archive.id.clone(), entries, last_selected_entry }
     }
 
     pub fn get_entries(&self) -> Vec<Entry> {
         self.entries.clone()
     }
 
-    pub fn get_entry(&self, name: String) -> Entry {
-        let entry = self.entries.iter().find(|e| e.name == name).unwrap().clone();
+    pub fn get_entry_by_id(&self, id: String) -> Entry {
+        let entry = self.entries.iter().find(|e| e.id == id).unwrap().clone();
         entry
+    }
+
+    pub fn get_name(&self) -> String {
+        self.name.clone()
     }
 
     pub fn add_entry(&mut self, name: String) {
@@ -85,11 +98,11 @@ impl Tome {
         self.entries.retain(|e| e.name != entry.name);
     }
 
-    pub fn set_last_selected_entry(&mut self, entry: Entry) {
+    pub fn set_last_entry(&mut self, entry: Entry) {
         self.last_selected_entry = Some(entry);
     }
 
-    pub fn get_last_selected_entry(&self) -> Option<Entry> {
+    pub fn get_last_entry(&self) -> Option<Entry> {
         self.last_selected_entry.clone()
     }
 }
@@ -105,8 +118,7 @@ pub struct Archive {
 
 impl Archive {
     pub async fn new(name: String) -> Self {
-        let id = Uuid::new_v4();
-        let id = id.to_string();
+        let id = Uuid::new_v4().to_string();
         let path = PathBuf::from(ARCHIVE_DIR).join(name.clone());
         if !path.exists() {
             std::fs::create_dir_all(&path).unwrap();
@@ -122,6 +134,7 @@ impl Archive {
         if let Err(e) = fs::write(&meta_path, meta.to_string()) {
             eprintln!("Failed to write archive metadata: {e}");
         }
+
         Self { id, name, path, tomes: Vec::new(), last_selected_tome: None }
     }
 
@@ -146,6 +159,19 @@ impl Archive {
         Ok(Self { id, name, path: path.to_path_buf(), tomes: Vec::new(), last_selected_tome: None })
     }
 
+    pub fn setup_archive(&mut self, name: String, tome_name: String) {
+        let tome = Tome::new(tome_name, &self);
+        self.tomes.push(tome);
+        self.last_selected_tome = Some(tome);
+    }
+
+    pub fn update_metadata(&mut self) {
+        let meta_path = self.path.join("archive.json");
+        let meta = json!({
+            "id": self.id,
+            "name": self.name,
+        });
+    }
     pub fn set_tomes(&mut self, tomes: Vec<Tome>) {
         self.tomes = tomes;
     }
@@ -164,11 +190,11 @@ impl Archive {
         self.tomes.retain(|t| t.id != id);
     }
 
-    pub fn set_last_selected_tome(&mut self, tome: Tome) {
+    pub fn set_last_tome(&mut self, tome: Tome) {
         self.last_selected_tome = Some(tome);
     }
 
-    pub fn get_last_selected_tome(&self) -> Option<Tome> {
+    pub fn get_last_tome(&self) -> Option<Tome> {
         self.last_selected_tome.clone()
     }
 }

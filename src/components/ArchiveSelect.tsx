@@ -14,14 +14,19 @@ interface ArchiveSelectProps {
 const CreateArchiveDialog = (props: { onCreateArchive: (archive: Archive) => void }) => {
     const { onCreateArchive } = props;
     const archiveNameRef = React.useRef<HTMLInputElement>(null);
+    const tomeNameRef = React.useRef<HTMLInputElement>(null);
 
-    const handleCreateArchive = async (e: React.FormEvent<HTMLButtonElement>) => {
+    const handleCreateArchive = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         const archiveName = archiveNameRef.current?.value;
-        if (archiveName) {  
-            const archive = await invoke("create_archive", { archiveName });
+        const tomeName = tomeNameRef.current?.value;
+        if (archiveName && tomeName && e.currentTarget.checkValidity()) {
+            const archive = await invoke("create_archive", { archiveName, tomeName });
             onCreateArchive(archive as unknown as Archive);
             archiveNameRef.current!.value = "";
+            tomeNameRef.current!.value = "";
+        } else {
+            return;
         }
     };
 
@@ -39,18 +44,23 @@ const CreateArchiveDialog = (props: { onCreateArchive: (archive: Archive) => voi
                     <Dialog.Description className="dialog-description">
                         Create a new archive to store your documents.
                     </Dialog.Description>
-                    <fieldset className="dialog-fieldset">
-                        <label className="dialog-label">Archive Name</label>
-                        <input type="text" placeholder="Archive Name" className="input" ref={archiveNameRef} />
-                    </fieldset>
-                    <div id="create-archive-buttons" className="dialog-buttons">
-                        <Dialog.Close asChild>
-                            <button className="create-button" aria-label="Create" onClick={handleCreateArchive}>Create</button>
-                        </Dialog.Close>
-                    </div>
-                    <Dialog.Close asChild>
-                            <button className="close-button" aria-label="Close"><Cross2Icon /></button>
-                    </Dialog.Close>
+                    <form onSubmit={handleCreateArchive} className="dialog-form">
+                        <fieldset className="dialog-fieldset">
+                            <label className="dialog-label">Archive Name</label>
+                            <input type="text" placeholder="Archive Name" className="input" ref={archiveNameRef} required minLength={1} maxLength={255} pattern="^[a-zA-Z0-9]+$" title="Name must be alphanumeric" />
+                        </fieldset>
+                        <fieldset className="dialog-fieldset">
+                            <label className="dialog-label">Tome Name</label>
+                            <input type="text" placeholder="Tome Name" className="input" ref={tomeNameRef} required minLength={1} maxLength={255} pattern="^[a-zA-Z0-9]+$" title="Name must be alphanumeric" />
+                        </fieldset>
+                        <div id="create-archive-buttons" className="dialog-buttons">
+                            <Dialog.Close asChild>
+                                <button className="close-button" aria-label="Close"><Cross2Icon /></button>
+                            </Dialog.Close>
+                            <button type="submit" className="create-button" aria-label="Create">Create</button>
+                        </div>
+                    </form>
+                   
                 </Dialog.Content>
             </Dialog.Portal>
         </Dialog.Root>

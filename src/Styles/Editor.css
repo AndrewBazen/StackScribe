@@ -1,0 +1,63 @@
+.cm-editor {
+    background-color: #111;
+    font-size: 14px;
+    line-height: 1.5;
+    padding: 5px;
+    border-radius: 8px;
+    border: 1px solid #333;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+    opacity: 0.8;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+.editor-container {
+  background-color: #222;
+  width: 100vw;
+  height: 100%;
+}
+  
+.cm-scroller {
+background-color: #111;
+font-size: 14px;
+line-height: 1.5;
+padding: 5px;
+}
+
+  
+
+.cm-gutter {
+background-color: #111;
+font-size: 14px;
+line-height: 1.5;
+}
+
+
+.cm-line { 
+background-color: #111;
+font-size: 14px;
+line-height: 1.5;
+}
+
+
+.preview-code {
+    background-color: #222 !important;
+    color: #fff !important;
+    padding: 10px !important;
+    margin: 0 !important;
+    width: 500px !important;
+    height: 100% !important;
+    border-radius: 8px !important;
+    border: 2px solid #3CBA8E !important;
+    box-shadow: 5px 5px 10px rgba(0, 0, 0, 0.5) !important;
+    opacity: 1 !important;
+    font-size: 14px !important;
+    font-weight: 400 !important;
+    line-height: 1.5 !important;
+    font-family: inherit !important;
+    font-size: inherit !important;
+    font-weight: inherit !important;
+    line-height: inherit !important;
+    font-family: inherit !important;
+    font-size: inherit !important;
+}

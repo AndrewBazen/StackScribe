@@ -1,4 +1,4 @@
-import "./App.css";
+import "./Styles/App.css";
 import { MdEditor } from "./components/MpEditor";
 import { useState, useEffect } from "react";
 import { NavIconButton } from "./components/NavIconButton";
@@ -8,12 +8,16 @@ import ArchiveTree from "./components/ArchiveTree";
 import { Tome } from "./types/tome";  
 import StartWindow from "./components/StartWindow";
 import { Archive } from "./types/archive";
-import { DotsHorizontalIcon, FilePlusIcon, GearIcon } from "@radix-ui/react-icons";
+import { FilePlusIcon, GearIcon } from "@radix-ui/react-icons";
 import { AppMenuBar } from "./components/AppMenuBar"; 
-import { NewTome, NewEntry, Save, SaveAll, Close, Preferences,
-  SaveShortcut, NewEntryShortcut, SelectTome, MarkEntryDirty,
-  SelectArchive, CreateArchive, OpenArchive, SelectEntry, GetArchives, GetEntryContent, NewTomeShortcut, OpenTome } from "./Utils/AppUtils";
+import { 
+   NewTome, NewEntry, Save, SaveAll, Close, Preferences,
+   SaveShortcut, NewEntryShortcut, SelectTome, MarkEntryDirty,
+   SelectArchive, OpenArchive, SelectEntry,
+   GetArchives, GetEntryContent, NewTomeShortcut, OpenTome,
+   getLastOpenedTome, getLastOpenedEntry, OpenTomeEntries } from "./Utils/AppUtils";
 import PreviewPanel from "./components/PreviewPanel";
+import NamePrompt from "./components/NamePrompt";
 
 const DIVIDER_SIZE = 2; // px
 
@@ -31,7 +35,8 @@ function App() {
   const [archive, setArchive] = useState<Archive | null>(null);
   const [archives, setArchives] = useState<Archive[]>([]);
   const [dirtyEntries, setDirtyEntries] = useState<Entry[]>([]);
-
+  const [newEntryName, setNewEntryName] = useState<string>("");
+  const [newTomeName, setNewTomeName] = useState<string>("");
 
   // open an archive
   const handleArchiveOpen = async (selectedArchive: Archive) => {
@@ -46,59 +51,42 @@ function App() {
     setArchive(archiveWithTomes);
     setTomes(tomes);
 
-    // If the archive has no tomes yet, create one automatically
-    if (tomes.length === 0) {
-      const newTome = await NewTome(archiveWithTomes, "Untitled");
-
-      // Update state collections so the UI tree shows the new tome immediately
-      setTomes([newTome]);
-      setArchive({ ...archiveWithTomes, tomes: [newTome] });
-
-      setTome(newTome);
-      setEntries(await OpenTome(newTome) as Entry[]);
-      const newEntry = await NewEntry(newTome, "Untitled");
-      setEntry(newEntry);
-      await SelectEntry(newEntry, newTome);
-      setMarkdown(await GetEntryContent(newEntry));
-      return;
-    }
-
-    // Select the first tome for now (could be enhanced to use last-opened later)
-    const firstTome = tomes[0];
-    await SelectTome(firstTome);
-    setTome(firstTome);
+    // Select the last opened tome
+    const lastOpenedTome = await getLastOpenedTome(archiveWithTomes);
+    await SelectTome(lastOpenedTome);
+    setTome(lastOpenedTome);
 
     // Load entries for that tome
-    const tomeEntries = (await OpenTome(firstTome)) as Entry[];
+    const tomeEntries = (await OpenTome(lastOpenedTome)) as Entry[];
     setEntries(tomeEntries);
 
     // If the tome has no entries, create a default one
     let initialEntry: Entry;
     if (tomeEntries.length === 0) {
-      initialEntry = await NewEntry(firstTome, "Untitled");
+      initialEntry = await NewEntry(lastOpenedTome, "Untitled");
       setEntries([initialEntry]);
     } else {
-      initialEntry = tomeEntries[0];
+      initialEntry = await getLastOpenedEntry(lastOpenedTome);
     }
 
     setEntry(initialEntry);
-    await SelectEntry(initialEntry, firstTome);
+    await SelectEntry(initialEntry, lastOpenedTome);
     setMarkdown(await GetEntryContent(initialEntry));
   };
 
   // create a new archive and a new tome with an untitled entry
-  const handleArchiveCreate = async (archive: Archive) => {
-    const newTome = await NewTome(archive, "Untitled") as unknown as Tome;
-    // Attach the newly created tome to the archive before storing it
-    const archiveWithTome = { ...archive, tomes: [newTome] } as unknown as Archive;
-    setArchive(archiveWithTome);
-    setTomes([newTome]);
-    setTome(newTome);
-    setEntries(await OpenTome(newTome) as Entry[]);
-    let newEntry = await NewEntry(newTome, "Untitled");
+  const handleArchiveCreate = async (newArchive: Archive) => {
+    // Attach the newly created tome to the archive before storing it in state
+    setArchive(newArchive);
+    setTomes(newArchive.tomes);
+    setTome(newArchive.tomes[0]);
+    setEntries(await OpenTomeEntries(newArchive.tomes[0] as Tome));
+    let newEntry = await getLastOpenedEntry(newArchive.tomes[0] as Tome);
     setEntry(newEntry);
-    await SelectEntry(newEntry, newTome as Tome);
+    await SelectEntry(newEntry, newArchive.tomes[0] as Tome);
     setMarkdown(await GetEntryContent(newEntry));
+    setNewTomeName("");
+    setNewEntryName("");
   };
 
   // open a tome
@@ -106,23 +94,33 @@ function App() {
     // Always keep selected tome in state first
     setTome(clickedTome);
 
-    // Load entries from backend for this tome
+    // Load entries from backend for this tome and check if any are currently dirty
+    // if they are, don't reload them
     const fetchedEntries = (await OpenTome(clickedTome)) as Entry[];
-    setEntries(fetchedEntries);
-
     if (fetchedEntries.length > 0) {
-      // Pick the first entry for now (enhance later to remember last)
-      const firstEntry = fetchedEntries[0];
-      setEntry(firstEntry);
-      await SelectEntry(firstEntry, clickedTome);
-      setMarkdown(await GetEntryContent(firstEntry));
+      const unchangedEntries = fetchedEntries.filter(entry => !dirtyEntries.some(e => e.id === entry.id));
+      console.log("unchanged entries", unchangedEntries);
+      console.log("dirty entries", dirtyEntries);
+      setEntries([...unchangedEntries, ...dirtyEntries]);
+    } else {
+      setEntries(fetchedEntries);
+      console.log("no entries");
+    }
+
+    // if the tome has entries, pick the last opened entry and select it
+    if (fetchedEntries.length > 0) {
+      const lastOpenedEntry = await getLastOpenedEntry(clickedTome);
+      setEntry(lastOpenedEntry);
+      await SelectEntry(lastOpenedEntry, clickedTome);
+      setMarkdown(await GetEntryContent(lastOpenedEntry));
     } else {
       // Tome is empty – create default untitled entry
-      const newEntry = await NewEntry(clickedTome, "Untitled");
+      const newEntry = await NewEntry(clickedTome, newEntryName);
       setEntries([newEntry]);
       setEntry(newEntry);
       await SelectEntry(newEntry, clickedTome);
       setMarkdown(await GetEntryContent(newEntry));
+      setNewEntryName("");
     }
   };
 
@@ -159,19 +157,29 @@ function App() {
     }
   };
 
-  const handleNewTome = async () => {
-    if (archive) {
-      const newTome = await NewTome(archive as Archive, "Untitled");
+  const handleNewTome = async (newTomeName: string) => {
+    setNewTomeName(newTomeName);
+    if (archive && !tomes.some(tome => tome.name === newTomeName)) {
+      const newTome = await NewTome(archive as Archive, newTomeName);
+      setTomes([...tomes, newTome]);
       setTome(newTome);
-      setEntries(await OpenTome(newTome) as unknown as Entry[]);
+      const newEntry = await NewEntry(newTome, newEntryName);
+      setEntries([newEntry]);
+      setEntry(newEntry);
+      setMarkdown(await GetEntryContent(newEntry));
+      setNewTomeName("");
+      setNewEntryName("");
     }
   };
 
-  const handleNewEntry = async () => {
-    if (tome) {
-      const newEntry = await NewEntry(tome as Tome, "Untitled");
+    const handleNewEntry = async (newEntryName: string) => {
+    setNewEntryName(newEntryName);
+    if (tome && !entries.some(entry => entry.name === newEntryName)) {
+      const newEntry = await NewEntry(tome as Tome, newEntryName);
+      setEntries([...entries, newEntry]);
       setEntry(newEntry);
       setMarkdown(await GetEntryContent(newEntry));
+      setNewEntryName("");
     }
   };
 
@@ -191,18 +199,28 @@ function App() {
   }, [entry]);
 
   useEffect(() => {
-    window.addEventListener("keydown", (e) => NewEntryShortcut(e, tome as Tome));
+    window.addEventListener("keydown", async (e) => {
+      const newEntry = await NewEntryShortcut(e, tome as Tome, newEntryName);
+      if (newEntry) {
+        setEntries([...entries, newEntry]);
+      }
+    });
     return () => {
-      window.removeEventListener("keydown", (e) => NewEntryShortcut(e, tome as Tome));
+      window.removeEventListener("keydown", (e) => NewEntryShortcut(e, tome as Tome, newEntryName));
     };
-  }, [tome]);
+  }, [tome, newEntryName]);
 
   useEffect(() => {
-    window.addEventListener("keydown", (e) => NewTomeShortcut(e, archive as Archive));
+    window.addEventListener("keydown", async (e) => {
+      const newTome = await NewTomeShortcut(e, archive as Archive, newTomeName);
+      if (newTome) {
+        setTomes([...tomes, newTome]);
+      }
+    });
     return () => {
-      window.removeEventListener("keydown", (e) => NewTomeShortcut(e, archive as Archive));
+      window.removeEventListener("keydown", (e) => NewTomeShortcut(e, archive as Archive, newTomeName));
     };
-  }, [archive]);
+  }, [archive, newTomeName]);
 
   useEffect(() => {
     const getArchives = async () => {
@@ -232,38 +250,42 @@ function App() {
 
   return (
     <>
+    {/* NAME PROMPT */}
+    {newEntryName && <NamePrompt title="New Entry" label="Entry Name" placeholder="Enter a name for the new entry" onConfirm={handleNewEntry} />}
+    {newTomeName && <NamePrompt title="New Tome" label="Tome Name" placeholder="Enter a name for the new tome" onConfirm={handleNewTome} />}
+
+    {/* START WINDOW */}
     <StartWindow archives={archives} onArchiveClick={handleArchiveOpen} onCreateArchive={handleArchiveCreate} />
+
+    {/* MENU BAR */}
     <div className="menubar">
-      <AppMenuBar onNewTome={handleNewTome} onNewEntry={handleNewEntry} onSave={handleSave} onSaveAll={handleSaveAll} onClose={handleClose} onPreferences={handlePreferences} />
+      <AppMenuBar
+        onNewEntry={() => handleNewEntry(newEntryName)}
+        onNewTome={() => handleNewTome(newTomeName)}
+        onSave={handleSave}
+        onSaveAll={handleSaveAll}
+        onClose={handleClose}
+        onPreferences={handlePreferences}
+      />
     </div>
+
+    {/* APP */}
     <div className="app">
-      {/* MENU BAR */}
       
       {/* LEFT PANEL */}
       <div className="side-panel" style={{ width: leftWidth }}>
-        
-        <div className="panel-header">
-          <h1>StackScribe</h1>
-        </div>
-        <div  className="panel-content">
-          {/* archive is set in the start window */}
-          {archive && <div className="tree-view"><ArchiveTree archive={archive} tomes={tomes} onTomeClick={handleTomeClick}/></div>}
-        </div>
-        {/* TODO: Add footer content*/}
-        <div className="panel-footer">
-          <div className="panel-nav">
-          {/* TODO: Add functionality to these icons */}
+        {/* archive is set in the start window */}
+        {archive && <div className="tree-view"><ArchiveTree archive={archive} tomes={tomes} onTomeClick={handleTomeClick}/></div>}
+        <div className="panel-nav">
           <NavIconButton icon={<GearIcon/>} onClick={handlePreferences} />
-          <NavIconButton icon={<FilePlusIcon/>} onClick={handleNewEntry} />
-          <NavIconButton icon={<DotsHorizontalIcon/>} onClick={handleNewTome} />
-          </div>
+          <NavIconButton icon={<FilePlusIcon/>} onClick={() => handleNewEntry(newEntryName)} />
         </div>
       </div>
 
-      {/* entry view that is opened when a tome is clicked */}
+      {/* ENTRY VIEW */}
       {tome && <div className="entry-view-panel"><EntryView entries={entries} onEntryClick={handleEntryClick} /></div>}
 
-      {/* EDITOR (flex 1) */}
+      {/* EDITOR */}
       <div id="editor-container" 
         className="panel" 
         style={{ flex: 1 }}
@@ -271,14 +293,14 @@ function App() {
         <MdEditor value={markdown} onEntryChange={handleEntryChanged} />
       </div>
 
-      {/* DIVIDER RIGHT */}
+      {/* DIVIDER */}
       <div
         className="divider"
         onMouseDown={() => setDragging("right")}
         style={{ width: DIVIDER_SIZE }}
       />
 
-      {/* PREVIEW */}
+      {/* PREVIEW PANEL */}
       <div
         id="preview-container"
         className="panel"

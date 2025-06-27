@@ -48,8 +48,10 @@ async fn run_code(code: String) -> Result<String, String> {
 // --------- archive commands ---------
 // create a new archive
 #[tauri::command]
-async fn create_archive( archive_name: String) -> Result<Archive, String> {
-    let archive = Archive::new(archive_name.clone()).await;
+async fn create_archive( archive_name: String, tome_name: String) -> Result<Archive, String> {
+    let mut archive = Archive::new(archive_name.clone()).await;
+    archive.setup_archive(archive_name.clone(), tome_name.clone());
+    archive.update_metadata();
     Ok(archive)
 }
 
@@ -105,6 +107,7 @@ async fn delete_archive(mut archives: Vec<Archive>, archive_id: String) -> Resul
 async fn create_tome(mut archive: Archive, tome_name: String) -> Result<Tome, String> {
     let tome = Tome::new(tome_name.clone(), &archive);
     archive.tomes.push(tome.clone());
+    archive.set_last_tome(tome.clone());
     Ok(tome)
 }
 
@@ -125,14 +128,15 @@ async fn set_tomes(mut archive: Archive, tomes: Vec<Tome>) -> Result<(), String>
 // get the last selected tome for an archive
 #[tauri::command]
 async fn get_last_selected_tome(archive: Archive) -> Result<Tome, String> {
-    let tome = archive.get_last_selected_tome();
-    Ok(tome.unwrap())
+    let last_tome_id = archive.get_last_tome().unwrap().id.clone();
+    let tome = archive.get_tome(last_tome_id.clone());
+    Ok(tome)
 }
 
 // set the last selected tome for an archive
 #[tauri::command]
 async fn set_last_selected_tome(mut archive: Archive, tome: Tome) -> Result<(), String> {
-    archive.set_last_selected_tome(tome);
+    archive.set_last_tome(tome.clone());
     Ok(())
 }
 
@@ -198,15 +202,17 @@ async fn get_entry_content(entry: Entry) -> Result<String, String> {
 // set the last selected entry for a tome
 #[tauri::command]
 async fn set_last_selected_entry(mut tome: Tome, entry: Entry) -> Result<(), String> {
-    tome.set_last_selected_entry(entry);
+    tome.set_last_entry(entry);
     Ok(())
 }
 
 // get the last selected entry for a tome
 #[tauri::command]
 async fn get_last_selected_entry(tome: Tome) -> Result<Entry, String> {
-    let entry = tome.get_last_selected_entry();
-    Ok(entry.unwrap())
+    match tome.get_last_entry() {
+        Some(e) => Ok(e),
+        None => Err("No last selected entry found".into()),
+    }
 }
 
 // --------- main entry point ---------
