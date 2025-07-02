@@ -29,5 +29,15 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "sql": {
+      "default": {
+        "connection": "sqlite:./stackscribe.db"
+      }
+    },
+    "fs": {
+      "requireLiteralLeadingDot": false
+    }
   }
 }

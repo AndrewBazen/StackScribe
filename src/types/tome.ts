@@ -2,7 +2,11 @@ import { Entry } from "./entry";
 
 export interface Tome {
     id: string;
+    archive_id: string;
     name: string;
-    entries: Entry[];
-    last_selected: boolean;
+    description?: string;
+    created_at: string;
+    updated_at: string;
+    entries?: Entry[]; // Optional for when loading from DB
+    last_selected?: boolean;
 }

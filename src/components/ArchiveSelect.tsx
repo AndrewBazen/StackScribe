@@ -3,7 +3,8 @@ import { Archive } from "../types/archive";
 import { Cross2Icon, PlusIcon } from "@radix-ui/react-icons";
 import ArchiveList from "./ArchiveList";
 import * as Dialog from "@radix-ui/react-dialog";
-import { invoke } from "@tauri-apps/api/core";
+import { saveArchive, saveTome } from "../stores/dataStore"; // Adjust the import path as necessary
+import { Tome } from "../types/tome";
 
 interface ArchiveSelectProps {
     archives: Archive[];
@@ -21,8 +22,35 @@ const CreateArchiveDialog = (props: { onCreateArchive: (archive: Archive) => voi
         const archiveName = archiveNameRef.current?.value;
         const tomeName = tomeNameRef.current?.value;
         if (archiveName && tomeName && e.currentTarget.checkValidity()) {
-            const archive = await invoke("create_archive", { archiveName, tomeName });
-            onCreateArchive(archive as unknown as Archive);
+            // Create the archive object
+            const archive: Archive = {
+                id: crypto.randomUUID(),
+                name: archiveName,
+                description: "",
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            };
+            
+            // Save the archive to the database
+            await saveArchive(archive);
+            
+            // Create the tome object
+            const tome: Tome = {
+                id: crypto.randomUUID(),
+                name: tomeName,
+                archive_id: archive.id,
+                description: "",
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            };
+            
+            // Save the tome to the database
+            await saveTome(tome);
+            
+            // Add the tome to the archive for the UI
+            const archiveWithTomes = { ...archive, tomes: [tome] };
+            
+            onCreateArchive(archiveWithTomes);
             archiveNameRef.current!.value = "";
             tomeNameRef.current!.value = "";
         } else {

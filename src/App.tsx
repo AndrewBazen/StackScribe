@@ -11,13 +11,17 @@ import { Archive } from "./types/archive";
 import { FilePlusIcon, GearIcon } from "@radix-ui/react-icons";
 import { AppMenuBar } from "./components/AppMenuBar"; 
 import { 
-   NewTome, NewEntry, Save, SaveAll, Close, Preferences,
+   NewTome, NewEntry, entrySave, saveAllEntries, exitApp,
    SaveShortcut, NewEntryShortcut, SelectTome, MarkEntryDirty,
-   SelectArchive, OpenArchive, SelectEntry,
+   SelectArchive, OpenArchive, SelectEntry, CreateArchive,
    GetArchives, GetEntryContent, NewTomeShortcut, OpenTome,
-   getLastOpenedTome, getLastOpenedEntry, OpenTomeEntries } from "./Utils/AppUtils";
+   getLastOpenedTome, getLastOpenedEntry,
+   OpenTomeEntries} from "./Utils/AppUtils";
 import PreviewPanel from "./components/PreviewPanel";
 import NamePrompt from "./components/NamePrompt";
+import { initDb } from "./lib/initDb";
+import { fullSync, syncFromServer } from "./lib/sync";
+import { testDatabase } from "./lib/testDb";
 
 const DIVIDER_SIZE = 2; // px
 
@@ -57,70 +61,66 @@ function App() {
     setTome(lastOpenedTome);
 
     // Load entries for that tome
-    const tomeEntries = (await OpenTome(lastOpenedTome)) as Entry[];
+    if (!tome) return;
+    const tomeResult = await OpenTome(tome);
+    const tomeEntries = (tomeResult?.entries as Entry[]) || [];
     setEntries(tomeEntries);
 
     // If the tome has no entries, create a default one
     let initialEntry: Entry;
     if (tomeEntries.length === 0) {
-      initialEntry = await NewEntry(lastOpenedTome, "Untitled");
+      initialEntry = await NewEntry(tome, "Untitled");
       setEntries([initialEntry]);
     } else {
-      initialEntry = await getLastOpenedEntry(lastOpenedTome);
+      initialEntry = await getLastOpenedEntry(tome) ?? tomeEntries[0];
     }
 
     setEntry(initialEntry);
-    await SelectEntry(initialEntry, lastOpenedTome);
-    setMarkdown(await GetEntryContent(initialEntry));
+    await SelectEntry(initialEntry, tome as Tome);
+    setMarkdown((await GetEntryContent(initialEntry)) ?? "");
   };
 
   // create a new archive and a new tome with an untitled entry
   const handleArchiveCreate = async (newArchive: Archive) => {
-    // Attach the newly created tome to the archive before storing it in state
-    setArchive(newArchive);
-    setTomes(newArchive.tomes);
-    setTome(newArchive.tomes[0]);
-    setEntries(await OpenTomeEntries(newArchive.tomes[0] as Tome));
-    let newEntry = await getLastOpenedEntry(newArchive.tomes[0] as Tome);
+    // Create the archive and persist it
+    const createdArchive = await CreateArchive(newArchive);
+    SelectArchive(createdArchive);
+    // Create a new tome in the archive
+    const newTome = await NewTome(createdArchive, "Untitled Tome");
+    setTomes([...tomes, newTome]);
+    setTome(newTome);
+
+    // Create a default untitled entry in the new tome
+    const newEntry = await NewEntry(newTome, "Untitled Entry");
+    setEntries([newEntry]);
     setEntry(newEntry);
-    await SelectEntry(newEntry, newArchive.tomes[0] as Tome);
-    setMarkdown(await GetEntryContent(newEntry));
-    setNewTomeName("");
-    setNewEntryName("");
+    setMarkdown((await GetEntryContent(newEntry)) ?? "");
   };
 
   // open a tome
   const handleTomeClick = async (clickedTome: Tome) => {
-    // Always keep selected tome in state first
-    setTome(clickedTome);
 
-    // Load entries from backend for this tome and check if any are currently dirty
-    // if they are, don't reload them
-    const fetchedEntries = (await OpenTome(clickedTome)) as Entry[];
-    if (fetchedEntries.length > 0) {
-      const unchangedEntries = fetchedEntries.filter(entry => !dirtyEntries.some(e => e.id === entry.id));
-      console.log("unchanged entries", unchangedEntries);
-      console.log("dirty entries", dirtyEntries);
-      setEntries([...unchangedEntries, ...dirtyEntries]);
-    } else {
-      setEntries(fetchedEntries);
-      console.log("no entries");
+    if (!tome) {
+      // If no tome is currently selected, select the clicked tome
+      const selectedTome = await SelectTome(clickedTome);
+      setTome(selectedTome);
+      const openedTome = await OpenTome(clickedTome);
+      const tomeEntries = await OpenTomeEntries(openedTome as Tome);
+      setEntries(tomeEntries);
     }
-
-    // if the tome has entries, pick the last opened entry and select it
-    if (fetchedEntries.length > 0) {
-      const lastOpenedEntry = await getLastOpenedEntry(clickedTome);
-      setEntry(lastOpenedEntry);
-      await SelectEntry(lastOpenedEntry, clickedTome);
-      setMarkdown(await GetEntryContent(lastOpenedEntry));
-    } else {
-      // Tome is empty – create default untitled entry
-      const newEntry = await NewEntry(clickedTome, newEntryName);
-      setEntries([newEntry]);
-      setEntry(newEntry);
-      await SelectEntry(newEntry, clickedTome);
-      setMarkdown(await GetEntryContent(newEntry));
-      setNewEntryName("");
+    else if (tome.id !== clickedTome.id) {
+      // If a different tome is selected, ensure any unsaved changes are handled
+      if (dirtyEntries.length > 0) {
+        // If the current entry is dirty, prompt to save it
+        const shouldSave = window.confirm(`Save changes before switching tomes?`);
+        if (shouldSave) {
+          setDirtyEntries(await saveAllEntries(dirtyEntries as Entry[]));
+        }
+      }
+      setTome(clickedTome);
+      const openedTome = await OpenTome(clickedTome);
+      const tomeEntries = (openedTome && Array.isArray(openedTome.entries)) ? openedTome.entries as Entry[] : [];
+      setEntries(tomeEntries);
     }
   };
 
@@ -128,17 +128,24 @@ function App() {
   const handleEntryClick = async (entry: Entry) => {
     setEntry(entry);
     await SelectEntry(entry, tome as Tome);
-    setMarkdown(await GetEntryContent(entry));
+    setMarkdown((await GetEntryContent(entry)) ?? "");
   };
 
   // save the entry when the user presses Ctrl+S
   const handleSave = async () => {
-      await Save(entry as Entry);
+      let result = await entrySave(entry as Entry);
+      if (result) {
+        // If the entry was saved successfully, remove it from dirty entries
+        setDirtyEntries(dirtyEntries.filter(e => e.id !== (entry as Entry).id));
+        console.log("Entry saved successfully");
+      } else {
+        // If the save failed, log an error
+        console.error("Failed to save entry");
+      }
   };
 
   const handleSaveAll = async () => {
-    await SaveAll(dirtyEntries as Entry[]);
-    setDirtyEntries([]);
+    setDirtyEntries(await saveAllEntries(dirtyEntries as Entry[]));
   };
 
   const handleEntryChanged = async (content: string) => {
@@ -157,40 +164,48 @@ function App() {
     }
   };
 
+  //------ CREATE NEW TOME/ENTRY ------
+
   const handleNewTome = async (newTomeName: string) => {
     setNewTomeName(newTomeName);
     if (archive && !tomes.some(tome => tome.name === newTomeName)) {
       const newTome = await NewTome(archive as Archive, newTomeName);
       setTomes([...tomes, newTome]);
       setTome(newTome);
-      const newEntry = await NewEntry(newTome, newEntryName);
-      setEntries([newEntry]);
-      setEntry(newEntry);
-      setMarkdown(await GetEntryContent(newEntry));
       setNewTomeName("");
-      setNewEntryName("");
+      // Automatically create a default entry in the new tome
+      const defaultEntry = await NewEntry(newTome, "Untitled Entry");
+      setEntries([defaultEntry]);
+      setEntry(defaultEntry);
+      setMarkdown(await GetEntryContent(defaultEntry) || "");
     }
   };
 
     const handleNewEntry = async (newEntryName: string) => {
     setNewEntryName(newEntryName);
-    if (tome && !entries.some(entry => entry.name === newEntryName)) {
+    if (tome && !entries.some(entry => entry.title === newEntryName)) {
       const newEntry = await NewEntry(tome as Tome, newEntryName);
       setEntries([...entries, newEntry]);
       setEntry(newEntry);
-      setMarkdown(await GetEntryContent(newEntry));
+      setMarkdown(await GetEntryContent(newEntry) || "");
       setNewEntryName("");
     }
   };
 
+  // Handle closing the app
+  // This will prompt the user to save changes if there are dirty entries
   const handleClose = async () => {
-    await Close();
+    await exitApp(dirtyEntries as Entry[]);
   };
 
+  // Handle preferences dialog
   const handlePreferences = async () => {
-    await Preferences();
+    // TODO: Implement preferences dialog
+    console.log("Preferences dialog not implemented yet.");
   };
 
+  // Handle entry saving via keyboard shortcut
+  // This will save the current entry when the user presses Ctrl+S
   useEffect(() => {
     window.addEventListener("keydown", (e) => SaveShortcut(e, entry as Entry));
     return () => {
@@ -198,6 +213,9 @@ function App() {
     };
   }, [entry]);
 
+
+  // Handle new entry creation via keyboard shortcut
+  // This will create a new entry in the currently selected tome
   useEffect(() => {
     window.addEventListener("keydown", async (e) => {
       const newEntry = await NewEntryShortcut(e, tome as Tome, newEntryName);
@@ -210,6 +228,8 @@ function App() {
     };
   }, [tome, newEntryName]);
 
+  // Handle new tome creation via keyboard shortcut
+  // This will create a new tome in the currently selected archive
   useEffect(() => {
     window.addEventListener("keydown", async (e) => {
       const newTome = await NewTomeShortcut(e, archive as Archive, newTomeName);
@@ -222,13 +242,78 @@ function App() {
     };
   }, [archive, newTomeName]);
 
+  // Handle unsaved changes before the user closes the window
+  // This will prompt the user to save changes if there are dirty entries
   useEffect(() => {
-    const getArchives = async () => {
-      const archives = await GetArchives();
-      setArchives(archives);
+    const handleBeforeUnload = async (e: BeforeUnloadEvent) => {
+      if (dirtyEntries.length > 0) {
+        e.preventDefault();
+        e.returnValue = ""; // Standard way to trigger confirmation dialog
+        await exitApp(dirtyEntries as Entry[]);
+      }
     };
-    getArchives();
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [dirtyEntries]);
+
+  // Handle app state changes to sync data when the app becomes active
+  useEffect(() => {
+    const handleAppStateChange = async (nextAppState: string) => {
+      if (nextAppState === "active") {
+        await fullSync();
+      }
+    };
+
+    const visibilityChangeListener = () => {
+      if (document.visibilityState === "visible") {
+        handleAppStateChange("active");
+      } else {
+        handleAppStateChange("inactive");
+      }
+    };
+
+    document.addEventListener("visibilitychange", visibilityChangeListener);
+    return () => {
+      document.removeEventListener("visibilitychange", visibilityChangeListener);
+    };
   }, []);
+
+  // Initialize the app on first load
+  // This will set up the database and sync data from the server
+  useEffect(() => {
+    const initializeApp = async () => {
+      try {
+        // Initialize the database
+        testDatabase().then(success => {
+          if (success) {
+            console.log("Database is working properly!");
+          } else {
+            console.log("Database has issues that need fixing.");
+          }
+        });
+      } catch (error) {
+        console.error("Failed to initialize app:", error);
+      }
+    };
+    initializeApp();
+  }, []);
+
+  useEffect(() => {
+    const fetchArchives = async () => {
+      try {
+        const fetchedArchives = await GetArchives();
+        setArchives(fetchedArchives);
+      } catch (error) {
+        console.error("Failed to fetch archives:", error);
+      }
+    };
+
+    fetchArchives();
+  }, []);
+
 
   useEffect(() => {
     const handleMove = (e: MouseEvent) => {
@@ -250,6 +335,9 @@ function App() {
 
   return (
     <>
+    {/* Initialize the app on first load */}
+    {/* This will set up the database and sync data from the server */}
+
     {/* NAME PROMPT */}
     {newEntryName && <NamePrompt title="New Entry" label="Entry Name" placeholder="Enter a name for the new entry" onConfirm={handleNewEntry} />}
     {newTomeName && <NamePrompt title="New Tome" label="Tome Name" placeholder="Enter a name for the new tome" onConfirm={handleNewTome} />}
@@ -274,7 +362,7 @@ function App() {
       
       {/* LEFT PANEL */}
       <div className="side-panel" style={{ width: leftWidth }}>
-        {/* archive is set in the start window */}
+        {/* TODO: right-click context menu for tomes */}
         {archive && <div className="tree-view"><ArchiveTree archive={archive} tomes={tomes} onTomeClick={handleTomeClick}/></div>}
         <div className="panel-nav">
           <NavIconButton icon={<GearIcon/>} onClick={handlePreferences} />
