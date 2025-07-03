@@ -7,7 +7,7 @@ import logo from "../../src-tauri/icons/icon.png";
 export default function StartWindow(props: {
     archives: Archive[];
     onArchiveClick: (archive: Archive) => void;
-    onCreateArchive: (archive: Archive) => void;
+    onCreateArchive: (archive: Archive, tomeName: string) => void;
 }) {
     const { archives, onArchiveClick, onCreateArchive } = props;
     const [isOpen, setIsOpen] = useState(true);
@@ -17,8 +17,8 @@ export default function StartWindow(props: {
         setIsOpen(false);
     };
 
-    const handleCreateArchive = (archive: Archive) => {
-        onCreateArchive(archive);
+    const handleCreateArchive = (archive: Archive, tomeName: string) => {
+        onCreateArchive(archive, tomeName);
         setIsOpen(false);
     };
 

@@ -13,15 +13,14 @@ import { AppMenuBar } from "./components/AppMenuBar";
 import { 
    NewTome, NewEntry, entrySave, saveAllEntries, exitApp,
    SaveShortcut, NewEntryShortcut, SelectTome, MarkEntryDirty,
-   SelectArchive, OpenArchive, SelectEntry, CreateArchive,
+   OpenArchive, SelectEntry, CreateArchive,
    GetArchives, GetEntryContent, NewTomeShortcut, OpenTome,
    getLastOpenedTome, getLastOpenedEntry,
    OpenTomeEntries} from "./Utils/AppUtils";
 import PreviewPanel from "./components/PreviewPanel";
 import NamePrompt from "./components/NamePrompt";
-import { initDb } from "./lib/initDb";
 import { fullSync, syncFromServer } from "./lib/sync";
-import { testDatabase } from "./lib/testDb";
+import { getDb } from "./lib/db";
 
 const DIVIDER_SIZE = 2; // px
 
@@ -44,57 +43,51 @@ function App() {
 
   // open an archive
   const handleArchiveOpen = async (selectedArchive: Archive) => {
-    // Persist last selected archive for next session
-    await SelectArchive(selectedArchive);
-
-    // Load tomes for the archive we just opened
-    const tomes = (await OpenArchive(selectedArchive)) as Tome[];
-
-    // Keep archive state in sync with its tomes so the tree view renders
-    const archiveWithTomes = { ...selectedArchive, tomes };
-    setArchive(archiveWithTomes);
-    setTomes(tomes);
+    setArchive(selectedArchive);
+    setTomes(await OpenArchive(selectedArchive));
 
     // Select the last opened tome
-    const lastOpenedTome = await getLastOpenedTome(archiveWithTomes);
+    const lastOpenedTome = await getLastOpenedTome(selectedArchive);
     await SelectTome(lastOpenedTome);
     setTome(lastOpenedTome);
 
     // Load entries for that tome
-    if (!tome) return;
-    const tomeResult = await OpenTome(tome);
-    const tomeEntries = (tomeResult?.entries as Entry[]) || [];
-    setEntries(tomeEntries);
-
-    // If the tome has no entries, create a default one
-    let initialEntry: Entry;
-    if (tomeEntries.length === 0) {
-      initialEntry = await NewEntry(tome, "Untitled");
-      setEntries([initialEntry]);
-    } else {
-      initialEntry = await getLastOpenedEntry(tome) ?? tomeEntries[0];
+    if (!tome)  {
+      console.error("No tome selected after opening archive:", selectedArchive);
+      return;
     }
-
-    setEntry(initialEntry);
-    await SelectEntry(initialEntry, tome as Tome);
-    setMarkdown((await GetEntryContent(initialEntry)) ?? "");
+    setEntries(await OpenTomeEntries(tome));
+    const lastOpenedEntry = await getLastOpenedEntry(tome);
+    setEntry(lastOpenedEntry);
+    if (!entry) {
+      console.error("No entry selected after opening tome:", tome);
+      return;
+    }
+    await SelectEntry(entry, tome);
+    setMarkdown(await GetEntryContent(entry) ?? "");
   };
 
   // create a new archive and a new tome with an untitled entry
-  const handleArchiveCreate = async (newArchive: Archive) => {
+  const handleArchiveCreate = async (newArchive: Archive, tomeName: string) => {
     // Create the archive and persist it
     const createdArchive = await CreateArchive(newArchive);
-    SelectArchive(createdArchive);
-    // Create a new tome in the archive
-    const newTome = await NewTome(createdArchive, "Untitled Tome");
-    setTomes([...tomes, newTome]);
-    setTome(newTome);
+    setArchive(createdArchive);
+
+    if (!createdArchive) {
+      console.error("Failed to create archive:", newArchive);
+      return;
+    }
+
+    // Create a new tome in the archive using the proper NewTome function
+    const createdTome = await NewTome(createdArchive, tomeName);
+    setTomes([createdTome]);
+    setTome(createdTome);
 
     // Create a default untitled entry in the new tome
-    const newEntry = await NewEntry(newTome, "Untitled Entry");
+    const newEntry = await NewEntry(createdTome, "Untitled Entry");
     setEntries([newEntry]);
     setEntry(newEntry);
-    setMarkdown((await GetEntryContent(newEntry)) ?? "");
+    setMarkdown(await GetEntryContent(newEntry) ?? "");
   };
 
   // open a tome
@@ -103,10 +96,10 @@ function App() {
     if (!tome) {
       // If no tome is currently selected, select the clicked tome
       const selectedTome = await SelectTome(clickedTome);
-      setTome(selectedTome);
+       setTome(selectedTome);
       const openedTome = await OpenTome(clickedTome);
       const tomeEntries = await OpenTomeEntries(openedTome as Tome);
-      setEntries(tomeEntries);
+       setEntries(tomeEntries);
     }
     else if (tome.id !== clickedTome.id) {
       // If a different tome is selected, ensure any unsaved changes are handled
@@ -117,16 +110,20 @@ function App() {
           setDirtyEntries(await saveAllEntries(dirtyEntries as Entry[]));
         }
       }
-      setTome(clickedTome);
+       setTome(clickedTome);
       const openedTome = await OpenTome(clickedTome);
-      const tomeEntries = (openedTome && Array.isArray(openedTome.entries)) ? openedTome.entries as Entry[] : [];
-      setEntries(tomeEntries);
+      if (!openedTome) {
+        console.error("Failed to open tome:", clickedTome);
+        return;
+      }
+      const tomeEntries = openedTome.entries as Entry[];
+       setEntries(tomeEntries);
     }
   };
 
   // open an entry
   const handleEntryClick = async (entry: Entry) => {
-    setEntry(entry);
+     setEntry(entry);
     await SelectEntry(entry, tome as Tome);
     setMarkdown((await GetEntryContent(entry)) ?? "");
   };
@@ -156,7 +153,7 @@ function App() {
     if (entry) {
       // keep entry object in sync with text so Save uses the latest content
       const updatedEntry = { ...entry, content } as Entry;
-      setEntry(updatedEntry);
+       setEntry(updatedEntry);
 
       if (!dirtyEntries.includes(updatedEntry)) {
         setDirtyEntries(await MarkEntryDirty(updatedEntry, dirtyEntries as Entry[]));
@@ -170,23 +167,23 @@ function App() {
     setNewTomeName(newTomeName);
     if (archive && !tomes.some(tome => tome.name === newTomeName)) {
       const newTome = await NewTome(archive as Archive, newTomeName);
-      setTomes([...tomes, newTome]);
-      setTome(newTome);
+       setTomes([...tomes, newTome]);
+       setTome(newTome);
       setNewTomeName("");
       // Automatically create a default entry in the new tome
       const defaultEntry = await NewEntry(newTome, "Untitled Entry");
-      setEntries([defaultEntry]);
-      setEntry(defaultEntry);
+       setEntries([defaultEntry]);
+       setEntry(defaultEntry);
       setMarkdown(await GetEntryContent(defaultEntry) || "");
     }
   };
 
     const handleNewEntry = async (newEntryName: string) => {
     setNewEntryName(newEntryName);
-    if (tome && !entries.some(entry => entry.title === newEntryName)) {
+    if (tome && !entries.some(entry => entry.name === newEntryName)) {
       const newEntry = await NewEntry(tome as Tome, newEntryName);
-      setEntries([...entries, newEntry]);
-      setEntry(newEntry);
+       setEntries([...entries, newEntry]);
+       setEntry(newEntry);
       setMarkdown(await GetEntryContent(newEntry) || "");
       setNewEntryName("");
     }
@@ -220,7 +217,7 @@ function App() {
     window.addEventListener("keydown", async (e) => {
       const newEntry = await NewEntryShortcut(e, tome as Tome, newEntryName);
       if (newEntry) {
-        setEntries([...entries, newEntry]);
+         setEntries([...entries, newEntry]);
       }
     });
     return () => {
@@ -234,7 +231,7 @@ function App() {
     window.addEventListener("keydown", async (e) => {
       const newTome = await NewTomeShortcut(e, archive as Archive, newTomeName);
       if (newTome) {
-        setTomes([...tomes, newTome]);
+         setTomes([...tomes, newTome]);
       }
     });
     return () => {
@@ -286,16 +283,37 @@ function App() {
   useEffect(() => {
     const initializeApp = async () => {
       try {
-        // Initialize the database
-        testDatabase().then(success => {
-          if (success) {
-            console.log("Database is working properly!");
-          } else {
-            console.log("Database has issues that need fixing.");
+        console.log('🚀 Initializing StackScribe...');
+        
+        // Initialize the database (migrations will run automatically via Tauri)
+        const db = await getDb();
+        console.log("✅ Database initialization completed successfully!");
+        
+        // Test basic database operations
+        try {
+          const tables = await db.select(`
+            SELECT name FROM sqlite_master 
+            WHERE type='table' AND name NOT LIKE 'sqlite_%'
+          `) as Array<{ name: string }>;
+          console.log('📊 Available tables:', tables);
+          
+          if (tables.length === 0) {
+            console.warn('⚠️ No tables found! Migration may have failed.');
           }
-        });
+        } catch (tableError) {
+          console.error('❌ Failed to query tables:', tableError);
+        }
+        
+        // Optionally sync from server on startup
+        try {
+          await syncFromServer();
+          console.log("✅ Initial sync from server completed");
+        } catch (syncError) {
+          console.log("⚠️ Server sync failed (this is OK if offline):", syncError);
+        }
       } catch (error) {
-        console.error("Failed to initialize app:", error);
+        console.error("❌ Failed to initialize app:", error);
+        console.error("🔧 Check console for Tauri migration logs");
       }
     };
     initializeApp();
@@ -305,7 +323,7 @@ function App() {
     const fetchArchives = async () => {
       try {
         const fetchedArchives = await GetArchives();
-        setArchives(fetchedArchives);
+        await setArchives(fetchedArchives);
       } catch (error) {
         console.error("Failed to fetch archives:", error);
       }

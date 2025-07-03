@@ -31,11 +31,6 @@
     ]
   },
   "plugins": {
-    "sql": {
-      "default": {
-        "connection": "sqlite:./stackscribe.db"
-      }
-    },
     "fs": {
       "requireLiteralLeadingDot": false
     }

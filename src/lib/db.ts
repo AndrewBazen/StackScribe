@@ -1,13 +1,19 @@
 import Database from '@tauri-apps/plugin-sql';
+import { join, resourceDir } from '@tauri-apps/api/path';
+
+let dbPromise: ReturnType<typeof Database.load> | null = null;
 
 export const getDb = async () => {
-  try {
-    // Use absolute path in app data directory
-    const db = await Database.load('sqlite:stackscribe.db');
-    console.log('✅ Database connected successfully');
-    return db;
-  } catch (error) {
-    console.error('❌ Database connection failed:', error);
-    throw error;
-  }
+  if (dbPromise) return dbPromise;
+
+  const resDir = await resourceDir();
+  const repoRoot = await join(resDir, '..', '..', '..');
+  const dbDir = await join(repoRoot, 'src', 'db');
+  const dbPath = await join(dbDir, 'stackscribe.db');
+
+  console.log("JS DB URL →", `sqlite:${dbPath}`);
+
+  // Load (or create) the SQLite database using an *absolute* path.
+  dbPromise = Database.load(`sqlite:${dbPath}`);
+  return dbPromise;
 }

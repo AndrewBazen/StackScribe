@@ -3,16 +3,14 @@ import { Archive } from "../types/archive";
 import { Cross2Icon, PlusIcon } from "@radix-ui/react-icons";
 import ArchiveList from "./ArchiveList";
 import * as Dialog from "@radix-ui/react-dialog";
-import { saveArchive, saveTome } from "../stores/dataStore"; // Adjust the import path as necessary
-import { Tome } from "../types/tome";
 
 interface ArchiveSelectProps {
     archives: Archive[];
     onArchiveClick: (archive: Archive) => void;
-    onCreateArchive: (archive: Archive) => void;
+    onCreateArchive: (archive: Archive, tomeName: string) => void; // Pass tome name separately
 }
 
-const CreateArchiveDialog = (props: { onCreateArchive: (archive: Archive) => void }) => {
+const CreateArchiveDialog = (props: { onCreateArchive: (archive: Archive, tomeName: string) => void }) => {
     const { onCreateArchive } = props;
     const archiveNameRef = React.useRef<HTMLInputElement>(null);
     const tomeNameRef = React.useRef<HTMLInputElement>(null);
@@ -22,35 +20,17 @@ const CreateArchiveDialog = (props: { onCreateArchive: (archive: Archive) => voi
         const archiveName = archiveNameRef.current?.value;
         const tomeName = tomeNameRef.current?.value;
         if (archiveName && tomeName && e.currentTarget.checkValidity()) {
-            // Create the archive object
+            // Create the archive object without any tomes
             const archive: Archive = {
                 id: crypto.randomUUID(),
                 name: archiveName,
                 description: "",
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
+                tomes: [], // Empty - App will create the tome properly
             };
             
-            // Save the archive to the database
-            await saveArchive(archive);
-            
-            // Create the tome object
-            const tome: Tome = {
-                id: crypto.randomUUID(),
-                name: tomeName,
-                archive_id: archive.id,
-                description: "",
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-            };
-            
-            // Save the tome to the database
-            await saveTome(tome);
-            
-            // Add the tome to the archive for the UI
-            const archiveWithTomes = { ...archive, tomes: [tome] };
-            
-            onCreateArchive(archiveWithTomes);
+            onCreateArchive(archive, tomeName); // Pass tome name separately
             archiveNameRef.current!.value = "";
             tomeNameRef.current!.value = "";
         } else {

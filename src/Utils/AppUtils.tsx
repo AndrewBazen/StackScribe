@@ -13,27 +13,32 @@ import { saveArchive,
  } from "../stores/dataStore";
 
 
-async function NewTome(archive: Archive, name: string) {
-    const tome = saveTome({
+async function NewTome(archive: Archive, name: string): Promise<Tome> {
+    const tome: Tome = {
         id: crypto.randomUUID(),
         archive_id: archive.id,
         name: name,
         description: "",
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-    } as Tome) as unknown as Tome;
+        entries: [], // Initialize with an empty array
+    };
+
+    await saveTome(tome);
     return tome;
 }
 
-async function NewEntry(tome: Tome, name: string) {
-    const entry = saveEntry({
+async function NewEntry(tome: Tome, title: string): Promise<Entry> {
+    const entry: Entry = {
         id: crypto.randomUUID(),
         tome_id: tome.id,
-        name: name,
+        name: title, // Using name for backwards compatibility
         content: "",
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-    } as Entry) as unknown as Entry;
+    };
+
+    await saveEntry(entry);
     return entry;
 }
 
@@ -90,7 +95,7 @@ async function getLastOpenedEntry(tome: Tome) {
     const lastSyncTime = await getLastSyncedAt();
     const lastSyncedEntries = await getUpdatedEntriesSince(lastSyncTime);
 
-    const lastModifiedEntry = lastSyncedEntries.find(entry => entry.updated_at === lastSyncTime && entry.tome_id === tome.id);
+    const lastModifiedEntry = lastSyncedEntries.find(entry => entry.updated_at === lastSyncTime && entry.tome_id === tome.id) || null;
     return lastModifiedEntry;
 }
 

@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Database files
+data/stackscribe.db
+data/*.db
+*.db
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

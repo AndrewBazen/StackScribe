@@ -11,6 +11,10 @@
     "sql:allow-execute",
     "sql:allow-select",
     "sql:allow-close",
-    "fs:default"
+    "fs:default",
+    "fs:allow-read-file",
+    "fs:allow-write-file",
+    "fs:allow-create",
+    "fs:allow-mkdir"
   ]
 }
