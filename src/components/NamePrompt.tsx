@@ -7,9 +7,10 @@ type Props = {
   label: string;
   placeholder: string;
   onConfirm: (name: string) => void;
+  onClose: (result: boolean) => void;
 };
 
-export default function NamePrompt({ title, label, placeholder, onConfirm }: Props) {
+export default function NamePrompt({ title, label, placeholder, onConfirm, onClose }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleConfirm = (e: FormEvent<HTMLFormElement>) => {
@@ -21,6 +22,10 @@ export default function NamePrompt({ title, label, placeholder, onConfirm }: Pro
     } else {
       return;
     }
+  };
+
+  const handleClose = () => {
+    onClose(false);
   };
 
   return (
@@ -45,16 +50,12 @@ export default function NamePrompt({ title, label, placeholder, onConfirm }: Pro
                         />
                     </fieldset>
                     <div className="dialog-buttons">
-                        <Dialog.Close asChild>
                             <button type="submit" className="create-button" aria-label="Confirm">
                                 Confirm
                             </button>
-                        </Dialog.Close>
-                        <Dialog.Close asChild>
-                            <button className="close-button" aria-label="Close">
+                            <button onClick={handleClose} className="close-button" aria-label="Close">
                                 <Cross2Icon />
                             </button>
-                        </Dialog.Close>
                     </div>
             </form>
         </Dialog.Content>

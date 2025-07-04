@@ -12,9 +12,9 @@ import { FilePlusIcon, GearIcon } from "@radix-ui/react-icons";
 import { AppMenuBar } from "./components/AppMenuBar"; 
 import { 
    NewTome, NewEntry, entrySave, saveAllEntries, exitApp,
-   SaveShortcut, NewEntryShortcut, SelectTome, MarkEntryDirty,
+   SaveShortcut, SelectTome, MarkEntryDirty,
    OpenArchive, SelectEntry, CreateArchive,
-   GetArchives, GetEntryContent, NewTomeShortcut, OpenTome,
+   GetArchives, GetEntryContent, OpenTome,
    getLastOpenedTome, getLastOpenedEntry,
    OpenTomeEntries} from "./Utils/AppUtils";
 import PreviewPanel from "./components/PreviewPanel";
@@ -38,33 +38,64 @@ function App() {
   const [archive, setArchive] = useState<Archive | null>(null);
   const [archives, setArchives] = useState<Archive[]>([]);
   const [dirtyEntries, setDirtyEntries] = useState<Entry[]>([]);
-  const [newEntryName, setNewEntryName] = useState<string>("");
-  const [newTomeName, setNewTomeName] = useState<string>("");
+  const [ShowEntryPrompt, setShowEntryPrompt] = useState<boolean>(false);
+  const [ShowTomePrompt, setShowTomePrompt] = useState<boolean>(false);
 
   // open an archive
   const handleArchiveOpen = async (selectedArchive: Archive) => {
     setArchive(selectedArchive);
-    setTomes(await OpenArchive(selectedArchive));
+    if (!selectedArchive) {
+      console.error("No archive selected");
+      return;
+    }
+
+    const openedTomes = await OpenArchive(selectedArchive);
+    setTomes(openedTomes);
 
     // Select the last opened tome
     const lastOpenedTome = await getLastOpenedTome(selectedArchive);
-    await SelectTome(lastOpenedTome);
-    setTome(lastOpenedTome);
+    if (!lastOpenedTome) {
+      console.error("No tome found for archive:", selectedArchive);
+      if (openedTomes.length === 0) {
+        console.error("No tomes available in archive");
+        return;
+      }
+      await SelectTome(openedTomes[0]);
+      setTome(openedTomes[0]);
+      const entries = await OpenTomeEntries(openedTomes[0]);
+      setEntries(entries);
+      
+      if (entries.length === 0) {
+        console.error("No entries found for tome:", openedTomes[0]);
+        return;
+      }
+      setEntry(entries[0]);
+      await SelectEntry(entries[0], openedTomes[0]);
+      setMarkdown(await GetEntryContent(entries[0]) ?? "");
+    } else {
+      console.log("Last opened tome:", lastOpenedTome);
+      await SelectTome(lastOpenedTome);
+      setTome(lastOpenedTome);
+      const entries = await OpenTomeEntries(lastOpenedTome);
+      setEntries(entries);
 
-    // Load entries for that tome
-    if (!tome)  {
-      console.error("No tome selected after opening archive:", selectedArchive);
-      return;
+      const lastOpenedEntry = await getLastOpenedEntry(lastOpenedTome);
+      if (!lastOpenedEntry) {
+        console.error("No last opened entry found for tome:", lastOpenedTome);
+        if (entries.length === 0) {
+          console.error("No entries found for tome:", lastOpenedTome);
+          return;
+        }
+        // Use the first entry if no last opened entry is found
+        setEntry(entries[0]);
+        await SelectEntry(entries[0], lastOpenedTome);
+        setMarkdown(await GetEntryContent(entries[0]) ?? "");
+      } else {
+        setEntry(lastOpenedEntry);
+        await SelectEntry(lastOpenedEntry, lastOpenedTome);
+        setMarkdown(await GetEntryContent(lastOpenedEntry) ?? "");
+      }
     }
-    setEntries(await OpenTomeEntries(tome));
-    const lastOpenedEntry = await getLastOpenedEntry(tome);
-    setEntry(lastOpenedEntry);
-    if (!entry) {
-      console.error("No entry selected after opening tome:", tome);
-      return;
-    }
-    await SelectEntry(entry, tome);
-    setMarkdown(await GetEntryContent(entry) ?? "");
   };
 
   // create a new archive and a new tome with an untitled entry
@@ -94,12 +125,13 @@ function App() {
   const handleTomeClick = async (clickedTome: Tome) => {
 
     if (!tome) {
+      console.log("No tome currently selected, opening clicked tome:", clickedTome);
       // If no tome is currently selected, select the clicked tome
       const selectedTome = await SelectTome(clickedTome);
-       setTome(selectedTome);
+      setTome(selectedTome);
       const openedTome = await OpenTome(clickedTome);
       const tomeEntries = await OpenTomeEntries(openedTome as Tome);
-       setEntries(tomeEntries);
+      setEntries(tomeEntries);
     }
     else if (tome.id !== clickedTome.id) {
       // If a different tome is selected, ensure any unsaved changes are handled
@@ -152,11 +184,10 @@ function App() {
     // mark entry dirty for save-all logic
     if (entry) {
       // keep entry object in sync with text so Save uses the latest content
-      const updatedEntry = { ...entry, content } as Entry;
-       setEntry(updatedEntry);
+      entry.content = content;
 
-      if (!dirtyEntries.includes(updatedEntry)) {
-        setDirtyEntries(await MarkEntryDirty(updatedEntry, dirtyEntries as Entry[]));
+      if (!dirtyEntries.includes(entry)) {
+        setDirtyEntries(await MarkEntryDirty(entry, dirtyEntries as Entry[]));
       }
     }
   };
@@ -164,12 +195,10 @@ function App() {
   //------ CREATE NEW TOME/ENTRY ------
 
   const handleNewTome = async (newTomeName: string) => {
-    setNewTomeName(newTomeName);
     if (archive && !tomes.some(tome => tome.name === newTomeName)) {
       const newTome = await NewTome(archive as Archive, newTomeName);
        setTomes([...tomes, newTome]);
        setTome(newTome);
-      setNewTomeName("");
       // Automatically create a default entry in the new tome
       const defaultEntry = await NewEntry(newTome, "Untitled Entry");
        setEntries([defaultEntry]);
@@ -178,14 +207,13 @@ function App() {
     }
   };
 
-    const handleNewEntry = async (newEntryName: string) => {
-    setNewEntryName(newEntryName);
+  const handleNewEntry = async (newEntryName: string) => {
     if (tome && !entries.some(entry => entry.name === newEntryName)) {
       const newEntry = await NewEntry(tome as Tome, newEntryName);
        setEntries([...entries, newEntry]);
        setEntry(newEntry);
       setMarkdown(await GetEntryContent(newEntry) || "");
-      setNewEntryName("");
+      handleShowEntryPrompt(false);
     }
   };
 
@@ -201,6 +229,14 @@ function App() {
     console.log("Preferences dialog not implemented yet.");
   };
 
+  const handleShowEntryPrompt = (show: boolean) => {
+    setShowEntryPrompt(show);
+  }
+
+  const handleShowTomePrompt = (show: boolean) => {
+    setShowTomePrompt(show);
+  };
+
   // Handle entry saving via keyboard shortcut
   // This will save the current entry when the user presses Ctrl+S
   useEffect(() => {
@@ -210,37 +246,6 @@ function App() {
     };
   }, [entry]);
 
-
-  // Handle new entry creation via keyboard shortcut
-  // This will create a new entry in the currently selected tome
-  useEffect(() => {
-    window.addEventListener("keydown", async (e) => {
-      const newEntry = await NewEntryShortcut(e, tome as Tome, newEntryName);
-      if (newEntry) {
-         setEntries([...entries, newEntry]);
-      }
-    });
-    return () => {
-      window.removeEventListener("keydown", (e) => NewEntryShortcut(e, tome as Tome, newEntryName));
-    };
-  }, [tome, newEntryName]);
-
-  // Handle new tome creation via keyboard shortcut
-  // This will create a new tome in the currently selected archive
-  useEffect(() => {
-    window.addEventListener("keydown", async (e) => {
-      const newTome = await NewTomeShortcut(e, archive as Archive, newTomeName);
-      if (newTome) {
-         setTomes([...tomes, newTome]);
-      }
-    });
-    return () => {
-      window.removeEventListener("keydown", (e) => NewTomeShortcut(e, archive as Archive, newTomeName));
-    };
-  }, [archive, newTomeName]);
-
-  // Handle unsaved changes before the user closes the window
-  // This will prompt the user to save changes if there are dirty entries
   useEffect(() => {
     const handleBeforeUnload = async (e: BeforeUnloadEvent) => {
       if (dirtyEntries.length > 0) {
@@ -357,8 +362,8 @@ function App() {
     {/* This will set up the database and sync data from the server */}
 
     {/* NAME PROMPT */}
-    {newEntryName && <NamePrompt title="New Entry" label="Entry Name" placeholder="Enter a name for the new entry" onConfirm={handleNewEntry} />}
-    {newTomeName && <NamePrompt title="New Tome" label="Tome Name" placeholder="Enter a name for the new tome" onConfirm={handleNewTome} />}
+    {ShowEntryPrompt && <NamePrompt title="New Entry"  label="Entry Name" placeholder="Enter a name for the new entry" onClose={handleShowEntryPrompt} onConfirm={(name: string) => { handleNewEntry(name); handleShowEntryPrompt(false); }} />}
+    {ShowTomePrompt && <NamePrompt title="New Tome" label="Tome Name" placeholder="Enter a name for the new tome" onClose={handleShowTomePrompt} onConfirm={(name: string) => {handleNewTome(name); handleShowTomePrompt(false)}} />}
 
     {/* START WINDOW */}
     <StartWindow archives={archives} onArchiveClick={handleArchiveOpen} onCreateArchive={handleArchiveCreate} />
@@ -366,8 +371,8 @@ function App() {
     {/* MENU BAR */}
     <div className="menubar">
       <AppMenuBar
-        onNewEntry={() => handleNewEntry(newEntryName)}
-        onNewTome={() => handleNewTome(newTomeName)}
+        onNewEntry={() => handleShowEntryPrompt(true)}
+        onNewTome={() => handleShowTomePrompt(true)}
         onSave={handleSave}
         onSaveAll={handleSaveAll}
         onClose={handleClose}
@@ -381,22 +386,22 @@ function App() {
       {/* LEFT PANEL */}
       <div className="side-panel" style={{ width: leftWidth }}>
         {/* TODO: right-click context menu for tomes */}
-        {archive && <div className="tree-view"><ArchiveTree archive={archive} tomes={tomes} onTomeClick={handleTomeClick}/></div>}
+        {archive && <div className="tree-view"><ArchiveTree archive={archive} tomes={tomes} onTomeClick={(tome: Tome) => {handleTomeClick(tome)}}/></div>}
         <div className="panel-nav">
           <NavIconButton icon={<GearIcon/>} onClick={handlePreferences} />
-          <NavIconButton icon={<FilePlusIcon/>} onClick={() => handleNewEntry(newEntryName)} />
+          <NavIconButton icon={<FilePlusIcon/>} onClick={() => handleShowEntryPrompt(true)} />
         </div>
       </div>
 
       {/* ENTRY VIEW */}
-      {tome && <div className="entry-view-panel"><EntryView entries={entries} onEntryClick={handleEntryClick} /></div>}
+      {tome && <div className="entry-view-panel"><EntryView entries={entries} onEntryClick={(entry: Entry) => {handleEntryClick(entry)}} /></div>}
 
       {/* EDITOR */}
       <div id="editor-container" 
         className="panel" 
         style={{ flex: 1 }}
       >
-        <MdEditor value={markdown} onEntryChange={handleEntryChanged} />
+        <MdEditor value={markdown} onEntryChange={(content: string) => {handleEntryChanged(content)}} />
       </div>
 
       {/* DIVIDER */}

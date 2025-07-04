@@ -112,30 +112,11 @@ async function OpenTome(tome: Tome, currentTome?: Tome) {
     }
 
     await SelectTome(existingTome);
-    const lastOpenedEntry = await getLastOpenedEntry(existingTome);
-    const firstEntry = Array.isArray(existingTome.entries) && existingTome.entries.length > 0 ? existingTome.entries[0] : null;
-    if (lastOpenedEntry) {
-        SelectEntry(lastOpenedEntry, existingTome);
-    } else if (firstEntry) {
-        SelectEntry(firstEntry, existingTome);
-    } else {
-        console.warn(`No entries found for tome ${existingTome.name}.`);
-    }
     return existingTome;
 }
 
 async function OpenTomeEntries(tome: Tome) {
-    const entries = await getEntriesByTomeId(tome.id);
-    if (entries.length === 0) {
-        console.warn(`No entries found for tome ${tome.name}.`);
-        return [];
-    }
-    
-    // Select the first entry by default
-    const lastOpenedEntry = await getLastOpenedEntry(tome);
-    await SelectEntry(lastOpenedEntry || entries[0], tome);
-    
-    return entries;
+    return await getEntriesByTomeId(tome.id);
 }
 
 async function SelectEntry(entry: Entry, tome: Tome) { 
@@ -154,7 +135,7 @@ async function SelectTome(tome: Tome | null) {
         console.error("Invalid tome provided.");
         return null;
     }
-    let returnedTome = getTomeById(tome.id);
+    const returnedTome = getTomeById(tome.id);
     if (!returnedTome) {
         console.warn(`Tome ${tome.name} does not exist.`);
         return null;
@@ -164,6 +145,15 @@ async function SelectTome(tome: Tome | null) {
 
 async function getLastOpenedTome(archive: Archive) {
     const lastSyncTime = await getLastSyncedAt();
+    if (!lastSyncTime) {
+        console.warn("No last sync time found. Cannot determine last opened tome.");
+        const firstTome = await getTomesByArchiveId(archive.id).then(tomes => tomes[0]);
+        if (!firstTome) {
+            console.warn(`No tomes found for archive ${archive.name}.`);
+            return null;
+        }
+        return firstTome;
+    }
     const lastSyncedTomes = await getUpdatedTomesSince(lastSyncTime);
     const lastModifiedTome = lastSyncedTomes.find(tome => tome.updated_at === lastSyncTime && tome.archive_id === archive.id);
     if (!lastModifiedTome) {
@@ -231,7 +221,5 @@ async function NewTomeShortcut(e: KeyboardEvent, archive: Archive, newTomeName: 
     }
 }
 
-export { NewTome, NewEntry, entrySave, saveAllEntries, exitApp,
-SaveShortcut, NewEntryShortcut, SelectTome, MarkEntryDirty,
+export { NewTome, NewEntry, entrySave, saveAllEntries, exitApp, NewEntryShortcut, SelectTome, MarkEntryDirty, SaveShortcut,
 SelectArchive, CreateArchive, OpenArchive, SelectEntry, GetArchives, GetEntryContent, NewTomeShortcut, OpenTome, getLastOpenedTome, getLastOpenedEntry, OpenTomeEntries };
-
