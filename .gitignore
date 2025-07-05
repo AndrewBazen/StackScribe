@@ -12,11 +12,6 @@ dist
 dist-ssr
 *.local
 
-# Database files
-data/
-*.db
-*.db-wal
-*.db-shm
 
 # Editor directories and files
 .vscode/*
