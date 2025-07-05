@@ -1,19 +1,17 @@
 import Database from '@tauri-apps/plugin-sql';
-import { join, resourceDir } from '@tauri-apps/api/path';
 
 let dbPromise: ReturnType<typeof Database.load> | null = null;
 
+/**
+ * Retrieves the SQLite database instance.
+ * If the database is already loaded, it returns the existing instance.
+ * Otherwise, it loads the database from the specified path.
+ *
+ * @returns {Promise<Database>} The SQLite database instance.
+ */ 
 export const getDb = async () => {
   if (dbPromise) return dbPromise;
-
-  const resDir = await resourceDir();
-  const repoRoot = await join(resDir, '..', '..', '..');
-  const dbDir = await join(repoRoot, 'src', 'db');
-  const dbPath = await join(dbDir, 'stackscribe.db');
-
-  console.log("JS DB URL →", `sqlite:${dbPath}`);
-
   // Load (or create) the SQLite database using an *absolute* path.
-  dbPromise = Database.load(`sqlite:${dbPath}`);
+  dbPromise = Database.load(`sqlite:stackscribe.db`);
   return dbPromise;
 }
