@@ -8,7 +8,7 @@ import { basicSetup } from "codemirror";
 import { TextToMarkdown } from "../Utils/MarkdownTools";
 import { invoke } from "@tauri-apps/api/core";
 import { useState, useEffect } from "react";
-import { myTheme } from "../assets/theme";
+import { myTheme } from "../Themes/theme";
 
 const md = markdown({
   base: markdownLanguage,

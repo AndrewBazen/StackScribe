@@ -1,33 +1,6 @@
-use std::{path::PathBuf, process::{Command, Stdio}};
-mod types;
-
-use types::{Archive, Tome, Entry};
+use std::{path::{PathBuf}, process::{Command, Stdio}};
 
 // --------- app commands ---------
-
-// get the app path
-#[tauri::command]
-async fn get_app_path() -> Result<String, String> {
-    // Use the project root (parent of `src-tauri`) as the base so that
-    // the `archives/` directory sits outside `src-tauri`.
-    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-    let project_root = cwd
-        .parent() // `src-tauri` -> project root
-        .map(|p| p.to_path_buf())
-        .unwrap_or(cwd);
-
-    let dir = project_root.join("archives");
-    if !dir.exists() {
-        println!("creating archive directory");
-        std::fs::create_dir_all(&dir).unwrap();
-    } else {
-        println!("loading archive directory");
-    }
-    let path = dir.to_string_lossy().to_string();
-    println!("path: {}", path);
-    Ok(path)
-}
-
 // test round trip
 #[tauri::command]
 async fn echo(input: String) -> String {
@@ -45,180 +18,58 @@ async fn run_code(code: String) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
-// --------- archive commands ---------
-// create a new archive
+// get current working directory
 #[tauri::command]
-async fn create_archive( archive_name: String) -> Result<Archive, String> {
-    let archive = Archive::new(archive_name.clone()).await;
-    Ok(archive)
-}
-
-// get the archives
-#[tauri::command]
-async fn get_archives() -> Result<Vec<Archive>, String> {
-    let base = PathBuf::from(get_app_path().await?);
-    // Iterate over the directories that already exist under `archives/` and
-    // map them to `Archive` instances WITHOUT creating extra folders.
-    // We do **not** call `Archive::new` here because that constructor is
-    // intended for creating brand-new archives and always generates a fresh
-    // UUID (leading to duplicates). Instead, we build the struct manually
-    // using the directory name as both the `id` and, for now, the `name`.
-
-    let archives = std::fs::read_dir(&base)
+async fn get_current_dir() -> Result<String, String> {
+    let current_dir = std::env::current_dir()
         .map_err(|e| e.to_string())?
-        .filter_map(|entry| entry.ok())
-        .filter(|entry| entry.path().is_dir())
-        .filter_map(|entry| {
-            // Attempt to load metadata; skip directories without valid archive.json
-            match Archive::load(entry.path()) {
-                Ok(a) => Some(a),
-                Err(err) => {
-                    eprintln!("Skipping archive {:?}: {}", entry.path(), err);
-                    None
-                }
-            }
-        })
-        .collect::<Vec<Archive>>();
-
-    Ok(archives)
-}  
-
-// get the archive for an archive_id
-#[tauri::command]
-async fn get_archive(archive_id: String) -> Result<Archive, String> {
-    let archives = get_archives().await?;
-    let archive = archives.iter().find(|a| a.id == archive_id).unwrap().clone();
-    Ok(archive)
+        .to_string_lossy()
+        .to_string();
+    Ok(current_dir)
 }
 
-// delete the archive for an archive_id
-#[tauri::command]
-async fn delete_archive(mut archives: Vec<Archive>, archive_id: String) -> Result<(), String> {
-    archives.retain(|a| a.id != archive_id);
-    Ok(())
-}
+fn get_absolute_path_migration(path: &str) -> PathBuf {
+    // Get the current working directory
+    let cwd = std::env::current_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| "unknown".to_string());
+    if path.starts_with('/') || path.starts_with('\\') {
+        return PathBuf::from(path);
+    }
+    let absolute_path = std::path::Path::new(&cwd).join(path);
+    return absolute_path;
+}   
 
-// --------- tome commands ---------
 
-// create a new tome for an archive
-#[tauri::command]
-async fn create_tome(mut archive: Archive, tome_name: String) -> Result<Tome, String> {
-    let tome = Tome::new(tome_name.clone(), &archive);
-    archive.tomes.push(tome.clone());
-    Ok(tome)
-}
 
-// get the tomes for an archive
-#[tauri::command]
-async fn get_tomes(archive: Archive) -> Result<Vec<Tome>, String> {
-    let tomes = archive.get_tomes();
-    Ok(tomes)
-}
-
-// set the tomes for an archive
-#[tauri::command]
-async fn set_tomes(mut archive: Archive, tomes: Vec<Tome>) -> Result<(), String> {
-    archive.set_tomes(tomes);
-    Ok(())
-}
-
-// get the last selected tome for an archive
-#[tauri::command]
-async fn get_last_selected_tome(archive: Archive) -> Result<Tome, String> {
-    let tome = archive.get_last_selected_tome();
-    Ok(tome.unwrap())
-}
-
-// set the last selected tome for an archive
-#[tauri::command]
-async fn set_last_selected_tome(mut archive: Archive, tome: Tome) -> Result<(), String> {
-    archive.set_last_selected_tome(tome);
-    Ok(())
-}
-
-// get the tome for an archive
-#[tauri::command]
-async fn get_tome(tome_id: String, archive_id: String) -> Result<Tome, String> {
-    let archive = get_archive(archive_id.clone()).await?;
-    let tome = archive.get_tome(tome_id.clone());
-    Ok(tome)
-}
-
-// delete the tome for an archive
-#[tauri::command]
-async fn delete_tome(mut archive: Archive, tome_id: String) -> Result<(), String> {
-    archive.remove_tome(tome_id.clone());
-    Ok(())
-}
-
-// --------- entry commands ---------
-
-// get the entry for a tome
-#[tauri::command]
-async fn get_entry(entry_name: String, tome: Tome) -> Result<Entry, String> {
-    let entry = tome.get_entry(entry_name.clone());
-    Ok(entry)
-}
-
-// create a new entry for a tome
-#[tauri::command]
-async fn create_entry(entry_name: String, mut tome: Tome) -> Result<Entry, String> {
-    tome.add_entry(entry_name.clone());
-    Ok(tome.get_entry(entry_name.clone()))
-}
-
-// get the entries for a tome
-#[tauri::command]
-async fn get_entries(tome: Tome) -> Result<Vec<Entry>, String> {
-    let entries = tome.get_entries();
-    Ok(entries)
-}
-
-// save the content of an entry (called from frontend when user presses Save)
-#[tauri::command]
-async fn save_entry(entry: Entry, content: String) -> Result<Entry, String> {
-    entry.set_content(&content)?;
-    Ok(entry)
-}
-
-// delete an entry
-#[tauri::command]
-async fn delete_entry(entry: Entry, mut tome: Tome) -> Result<(), String> {
-    tome.remove_entry(entry);
-    Ok(())
-}
-
-// get the content of an entry
-#[tauri::command]
-async fn get_entry_content(entry: Entry) -> Result<String, String> {
-    let content = entry.get_content();
-    Ok(content)
-}
-
-// set the last selected entry for a tome
-#[tauri::command]
-async fn set_last_selected_entry(mut tome: Tome, entry: Entry) -> Result<(), String> {
-    tome.set_last_selected_entry(entry);
-    Ok(())
-}
-
-// get the last selected entry for a tome
-#[tauri::command]
-async fn get_last_selected_entry(tome: Tome) -> Result<Entry, String> {
-    let entry = tome.get_last_selected_entry();
-    Ok(entry.unwrap())
-}
 
 // --------- main entry point ---------
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+
+    let migration_pathbuf = get_absolute_path_migration("../data/migrations/001_initial_schema.sql");
+    let migration_sql = std::fs::read_to_string(&migration_pathbuf)
+        .expect("Failed to read migration file");
+    let migration_sql_static: &'static str = Box::leak(migration_sql.into_boxed_str());
+    println!("🔧 Migration SQL path: {}", migration_pathbuf.display());
+    println!("📄 Migration SQL content length: {} bytes", migration_sql_static.len());   
+
+    let migrations = vec![tauri_plugin_sql::Migration {
+        version: 1,
+        sql: migration_sql_static, // Use to_string_lossy() to convert PathBuf to String
+        description: "Initial migration",
+        kind: tauri_plugin_sql::MigrationKind::Up,
+    }];
+    
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![get_app_path, echo, run_code, create_archive, create_tome, create_entry,
-             get_archives, get_tomes, set_tomes, get_last_selected_tome, set_last_selected_tome, get_tome,
-             get_entries, save_entry, delete_entry, get_entry, get_last_selected_entry, set_last_selected_entry,
-             get_entry_content, get_archive, get_tome, delete_tome, delete_archive])
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_sql::Builder::default()
+            .add_migrations("sqlite:stackscribe.db", migrations)
+            .build())
+        .invoke_handler(tauri::generate_handler![echo, run_code, get_current_dir])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

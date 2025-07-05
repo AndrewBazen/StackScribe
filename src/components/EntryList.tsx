@@ -13,7 +13,7 @@ export default function EntryList(props: EntryListProps) {
         <ScrollArea.Root className="entry-list">
             <ScrollArea.Viewport className="entry-list-viewport">
                 {entries.map((entry) => (
-                    <EntryItem key={entry.name} entry={entry} onEntryClick={onEntryClick} />
+                    <EntryItem key={entry.id} entry={entry} onEntryClick={onEntryClick} />
                 ))}
             </ScrollArea.Viewport>
         </ScrollArea.Root>
