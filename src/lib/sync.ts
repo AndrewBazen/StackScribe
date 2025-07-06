@@ -1,178 +1,218 @@
-import { 
-    saveArchive,
-    getLastSyncedAt,
-    setLastSyncedAt,
-    getUpdatedArchivesSince,
-    saveTome,
-    getUpdatedTomesSince,
-    saveEntry,
-    getUpdatedEntriesSince,
-    getAllArchives
-} from "../stores/dataStore";
-import { Archive } from "../types/archive";
-import { Tome } from "../types/tome";
-import { Entry } from "../types/entry";
+import { getDb } from './db';
+import { Archive } from '../types/archive';
+import { Tome } from '../types/tome';
+import { Entry } from '../types/entry';
 
-// TODO: update for Azure or other sync service
-const API_Base = 'http://192.168.0.69/api/v1';
-
-export interface SyncResponse {
-    archives: Archive[];
-    tomes: Tome[];
-    entries: Entry[];
-    lastModified: string;
+export interface SyncManager {
+  syncToAzure(): Promise<void>;
+  syncFromAzure(): Promise<void>;
+  fullSync(): Promise<void>;
 }
 
-export const syncFromServer = async (): Promise<void> => {
+export class AzureSyncManager implements SyncManager {
+  private msalInstance: any;
+  private account: any;
+  private azureFunctionUrl: string;
+  private isSyncing: boolean = false;
+  private syncPromise: Promise<void> | null = null;
+
+  constructor(msalInstance: any, account: any) {
+    this.msalInstance = msalInstance;
+    this.account = account;
+    // Update this URL to match your deployed Azure Function
+    this.azureFunctionUrl = import.meta.env.REACT_APP_AZURE_FUNCTION_URL || 
+      'https://stackscribe-sync-exaycnehhqgxdhen.westeurope-01.azurewebsites.net';
+  }
+
+  async syncToAzure(): Promise<void> {
     try {
-        const lastSyncedAt = await getLastSyncedAt();
-        const url = lastSyncedAt 
-            ? `${API_Base}/sync?since=${encodeURIComponent(lastSyncedAt)}`
-            : `${API_Base}/sync`;
-        
-        const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error(`Failed to fetch from server: ${response.statusText}`);
-        }
+      console.log('🔄 Starting sync to Azure...');
+      
+      // Get access token with simpler scope
+      const tokenResponse = await this.msalInstance.acquireTokenSilent({
+        scopes: ["User.Read"], // Use a basic scope that works
+        account: this.account
+      });
 
-        const serverData: SyncResponse = await response.json();
-        
-        // Sync archives
-        for (const archive of serverData.archives) {
-            await saveArchive(archive);
-        }
-        
-        // Sync tomes
-        for (const tome of serverData.tomes) {
-            await saveTome(tome);
-        }
-        
-        // Sync entries
-        for (const entry of serverData.entries) {
-            await saveEntry(entry);
-        }
+      // Extract data from local SQLite
+      const db = await getDb();
+      const [archives, tomes, entries] = await Promise.all([
+        db.select('SELECT * FROM archives') as Promise<Archive[]>,
+        db.select('SELECT * FROM tomes') as Promise<Tome[]>,
+        db.select('SELECT * FROM entries') as Promise<Entry[]>
+      ]);
 
-        // Update last synced timestamp
-        if (serverData.lastModified) {
-            await setLastSyncedAt(serverData.lastModified);
-        }
+      console.log(`📊 Syncing ${archives.length} archives, ${tomes.length} tomes, ${entries.length} entries`);
 
-        console.log('✅ Successfully synced data from server');
+      // Send to Azure Function
+      const response = await fetch(`${this.azureFunctionUrl}/api/sync`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${tokenResponse.accessToken}`
+        },
+        body: JSON.stringify({
+          data: { archives, tomes, entries }
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Sync failed: ${response.status} ${response.statusText} - ${errorText}`);
+      }
+
+      const result = await response.json();
+      console.log('✅ Sync to Azure completed successfully:', result);
     } catch (error) {
-        console.error('❌ Error syncing from server:', error);
-        throw error;
+      console.error('❌ Sync to Azure failed:', error);
+      throw error;
     }
-};
+  }
 
-export const syncToServer = async (): Promise<void> => {
+  async syncFromAzure(): Promise<void> {
+    // Check if already syncing
+    if (this.isSyncing && this.syncPromise) {
+      console.warn('⚠️ Full sync in progress, skipping individual syncFromAzure');
+      return;
+    }
+
     try {
-        const lastSyncedAt = await getLastSyncedAt();
-        
-        // Get all updated data since last sync
-        const updatedArchives = await getUpdatedArchivesSince(lastSyncedAt);
-        const updatedTomes = await getUpdatedTomesSince(lastSyncedAt);
-        const updatedEntries = await getUpdatedEntriesSince(lastSyncedAt);
+      console.log('🔄 Starting sync from Azure...');
+      
+      // Get access token
+      const tokenResponse = await this.msalInstance.acquireTokenSilent({
+        scopes: ["User.Read"], // Use a basic scope that works
+        account: this.account
+      });
 
-        if (updatedArchives.length === 0 && updatedTomes.length === 0 && updatedEntries.length === 0) {
-            console.log('📄 No local changes to sync');
-            return;
+      // Fetch data from Azure Function
+      const response = await fetch(`${this.azureFunctionUrl}/api/sync`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${tokenResponse.accessToken}`
+        }
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Sync failed: ${response.status} ${response.statusText} - ${errorText}`);
+      }
+
+      const result = await response.json();
+      const { archives, tomes, entries } = result.data;
+
+      console.log(`📊 Received ${archives.length} archives, ${tomes.length} tomes, ${entries.length} entries from Azure`);
+
+      // Save data to local SQLite
+      const db = await getDb();
+      
+      // Use transactions for better performance and consistency
+      await db.execute('BEGIN TRANSACTION');
+      
+      try {
+        // Clear existing data (you might want to implement smarter merging logic)
+        await db.execute('DELETE FROM entries');
+        await db.execute('DELETE FROM tomes');
+        await db.execute('DELETE FROM archives');
+
+        // Insert archives
+        for (const archive of archives) {
+          await db.execute(
+            'INSERT INTO archives (id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+            [archive.id, archive.name, archive.description, archive.created_at, archive.updated_at]
+          );
         }
 
-        const payload = {
-            archives: updatedArchives,
-            tomes: updatedTomes,
-            entries: updatedEntries
-        };
-
-        const response = await fetch(`${API_Base}/sync`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-
-        if (!response.ok) {
-            throw new Error(`Failed to sync to server: ${response.statusText}`);
+        // Insert tomes
+        for (const tome of tomes) {
+          await db.execute(
+            'INSERT INTO tomes (id, archive_id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+            [tome.id, tome.archive_id, tome.name, tome.description, tome.created_at, tome.updated_at]
+          );
         }
 
-        const result = await response.json();
-        if (result.lastModified) {
-            await setLastSyncedAt(result.lastModified);
+        // Insert entries
+        for (const entry of entries) {
+          await db.execute(
+            'INSERT INTO entries (id, tome_id, name, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+            [entry.id, entry.tome_id, entry.name, entry.content, entry.created_at, entry.updated_at]
+          );
         }
 
-        console.log('✅ Successfully synced data to server');
-    } catch (error) {
-        console.error('❌ Error syncing to server:', error);
+        await db.execute('COMMIT');
+        console.log('✅ Sync from Azure completed successfully');
+      } catch (error) {
+        await db.execute('ROLLBACK');
         throw error;
+      }
+    } catch (error) {
+      console.error('❌ Sync from Azure failed:', error);
+      throw error;
     }
-};
+  }
 
-export const fullSync = async (): Promise<void> => {
-    console.log('🔄 Starting full sync...');
+  async fullSync(): Promise<void> {
+    // Prevent concurrent sync operations
+    if (this.isSyncing) {
+      console.warn('⚠️ Sync already in progress, waiting for it to complete...');
+      if (this.syncPromise) {
+        return this.syncPromise;
+      }
+      return;
+    }
+
+    this.isSyncing = true;
+    this.syncPromise = this._performFullSync();
     
     try {
-        // First sync from server to get latest data
-        await syncFromServer();
-        
-        // Then sync local changes to server
-        await syncToServer();
-        
-        console.log('✅ Full sync completed successfully');
+      await this.syncPromise;
+    } finally {
+      this.isSyncing = false;
+      this.syncPromise = null;
+    }
+  }
+
+  private async _performFullSync(): Promise<void> {
+    try {
+      console.log('🔄 Starting full sync...');
+      
+      // First sync local changes to Azure
+      await this.syncToAzure();
+      
+      // Then sync changes from Azure back to local
+      await this.syncFromAzure();
+      
+      console.log('✅ Full sync completed successfully');
     } catch (error) {
-        console.error('❌ Full sync failed:', error);
-        throw error;
+      console.error('❌ Full sync failed:', error);
+      throw error;
     }
+  }
+}
+
+// Global sync manager instance
+let syncManager: AzureSyncManager | null = null;
+
+export const initializeSyncManager = (msalInstance: any, account: any) => {
+  syncManager = new AzureSyncManager(msalInstance, account);
+  return syncManager;
 };
 
-// Legacy functions for backwards compatibility
-export const syncArchives = async (remoteArchives: Archive[]) => {
-    const localArchives = await getAllArchives();
-    const localMap = new Map(localArchives.map(a => [a.id, a]));
-
-    let newestTimestamp = await getLastSyncedAt();
-
-    for (const remote of remoteArchives) {
-        const local = localMap.get(remote.id);
-        if (!local || new Date(local.updated_at) < new Date(remote.updated_at)) {
-            console.log(`📥 Syncing archive: ${remote.name}`);
-            await saveArchive(remote);
-            if (!newestTimestamp || new Date(remote.updated_at) > new Date(newestTimestamp)) {
-                newestTimestamp = remote.updated_at;
-            }
-        } else {
-            console.warn(`⏩ Skipping archive ${remote.name} - local is newer than remote.`);
-        }
-    }
-
-    if (newestTimestamp) {
-        await setLastSyncedAt(newestTimestamp);
-    }
-
-    console.log('✅ Synced all remote archives to local storage.');
+export const getSyncManager = (): AzureSyncManager | null => {
+  return syncManager;
 };
 
-export const uploadArchives = async () => {
-    const updatedLocalArchives = await getAllArchives(); // You might want to filter by lastSyncedAt
-
-    if (updatedLocalArchives.length > 0) {
-        console.log(`📤 Uploading ${updatedLocalArchives.length} updated archives...`);
-
-        try {
-            const response = await fetch(`${API_Base}/archives`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(updatedLocalArchives)
-            });
-
-            if (!response.ok) {
-                throw new Error(`Failed to upload archives: ${response.statusText}`);
-            }
-        }
-        catch (err) {
-            console.error('❌ Error uploading archives:', err);
-            return;
-        }
-        console.log(`✅ Successfully uploaded ${updatedLocalArchives.length} archives.`);
-    }
-
-    return updatedLocalArchives;
+// Convenience function for the current fullSync call in your app
+export const fullSync = async (): Promise<void> => {
+  if (!syncManager) {
+    console.warn('⚠️ Sync manager not initialized, skipping sync');
+    return;
+  }
+  
+  try {
+    await syncManager.fullSync();
+  } catch (error) {
+    console.error('❌ Full sync failed:', error);
+    // Don't throw the error so the app continues to work offline
+  }
 };

@@ -114,7 +114,7 @@ export const saveEntry = async (entry: Entry): Promise<QueryResult> => {
 
     if (!existing || new Date(existing.updated_at) < new Date(entry.updated_at)) {
         return await db.execute(
-            `INSERT OR REPLACE INTO entries (id, tome_id, title, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+            `INSERT OR REPLACE INTO entries (id, tome_id, name, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
             [entry.id, entry.tome_id, entry.name, entry.content, entry.created_at, entry.updated_at]
         );
     } else {

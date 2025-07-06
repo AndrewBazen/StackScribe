@@ -1,6 +1,6 @@
 import "./Styles/App.css";
 import { MdEditor } from "./components/MpEditor";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { NavIconButton } from "./components/NavIconButton";
 import EntryView from "./components/EntryView";
 import { Entry } from "./types/entry";
@@ -19,7 +19,7 @@ import {
    OpenTomeEntries} from "./Utils/AppUtils";
 import PreviewPanel from "./components/PreviewPanel";
 import NamePrompt from "./components/NamePrompt";
-import { fullSync, syncFromServer } from "./lib/sync";
+import { fullSync } from "./lib/sync";
 import { getDb } from "./lib/db";
 
 const DIVIDER_SIZE = 2; // px
@@ -40,6 +40,9 @@ function App() {
   const [dirtyEntries, setDirtyEntries] = useState<Entry[]>([]);
   const [ShowEntryPrompt, setShowEntryPrompt] = useState<boolean>(false);
   const [ShowTomePrompt, setShowTomePrompt] = useState<boolean>(false);
+  
+  // Track initialization to prevent multiple sync operations
+  const isInitialized = useRef<boolean>(false);
 
   // open an archive
   const handleArchiveOpen = async (selectedArchive: Archive) => {
@@ -261,32 +264,40 @@ function App() {
     };
   }, [dirtyEntries]);
 
-  // Handle app state changes to sync data when the app becomes active
-  useEffect(() => {
-    const handleAppStateChange = async (nextAppState: string) => {
-      if (nextAppState === "active") {
-        await fullSync();
-      }
-    };
+  // // Handle app state changes to sync data when the app becomes active
+  // useEffect(() => {
+  //   const handleAppStateChange = async (nextAppState: string) => {
+  //     if (nextAppState === "active") {
+  //       await fullSync();
+  //     }
+  //   };
 
-    const visibilityChangeListener = () => {
-      if (document.visibilityState === "visible") {
-        handleAppStateChange("active");
-      } else {
-        handleAppStateChange("inactive");
-      }
-    };
+  //   const visibilityChangeListener = () => {
+  //     if (document.visibilityState === "visible") {
+  //       handleAppStateChange("active");
+  //     } else {
+  //       handleAppStateChange("inactive");
+  //     }
+  //   };
 
-    document.addEventListener("visibilitychange", visibilityChangeListener);
-    return () => {
-      document.removeEventListener("visibilitychange", visibilityChangeListener);
-    };
-  }, []);
+  //   document.addEventListener("visibilitychange", visibilityChangeListener);
+  //   return () => {
+  //     document.removeEventListener("visibilitychange", visibilityChangeListener);
+  //   };
+  // }, []);
 
   // Initialize the app on first load
   // This will set up the database and sync data from the server
   useEffect(() => {
     const initializeApp = async () => {
+      // Prevent multiple initializations
+      if (isInitialized.current) {
+        console.log('⚠️ App already initialized, skipping...');
+        return;
+      }
+      
+      isInitialized.current = true;
+      
       try {
         console.log('🚀 Initializing StackScribe...');
         
@@ -311,7 +322,7 @@ function App() {
         
         // Optionally sync from server on startup
         try {
-          await syncFromServer();
+          await fullSync();
           console.log("✅ Initial sync from server completed");
         } catch (syncError) {
           console.log("⚠️ Server sync failed (this is OK if offline):", syncError);
@@ -319,6 +330,8 @@ function App() {
       } catch (error) {
         console.error("❌ Failed to initialize app:", error);
         console.error("🔧 Check console for Tauri migration logs");
+        // Reset flag on error so retry is possible
+        isInitialized.current = false;
       }
     };
     initializeApp();
