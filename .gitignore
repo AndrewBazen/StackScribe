@@ -29,3 +29,4 @@ stackscribe-functions/node_modules
 stackscribe-functions/dist/
 stackscribe-functions/local.settings.json
 stackscribe-functions/.vscode/
+.env
