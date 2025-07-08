@@ -1,0 +1,23 @@
+{
+  "name": "stackscribe-functions",
+  "version": "1.0.0",
+  "description": "Azure Functions for StackScribe sync",
+  "main": "dist/src/app.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "prestart": "npm run build",
+    "start": "func start",
+    "test": "echo \"No tests yet...\"",
+    "deploy": "func azure functionapp publish stackscribe-sync"
+  },
+  "dependencies": {
+    "@azure/functions": "^4.5.0",
+    "@azure/identity": "^4.10.2",
+    "tedious": "^18.6.1"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "typescript": "^4.9.5"
+  }
+}
