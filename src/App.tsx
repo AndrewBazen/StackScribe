@@ -65,6 +65,8 @@ function App() {
       }
       await SelectTome(openedTomes[0]);
       setTome(openedTomes[0]);
+      console.log("opened tome:", openedTomes[0]);
+      console.log("current selected tome:", tome?.name);
       const entries = await OpenTomeEntries(openedTomes[0]);
       setEntries(entries);
       
@@ -263,28 +265,6 @@ function App() {
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
   }, [dirtyEntries]);
-
-  // // Handle app state changes to sync data when the app becomes active
-  // useEffect(() => {
-  //   const handleAppStateChange = async (nextAppState: string) => {
-  //     if (nextAppState === "active") {
-  //       await fullSync();
-  //     }
-  //   };
-
-  //   const visibilityChangeListener = () => {
-  //     if (document.visibilityState === "visible") {
-  //       handleAppStateChange("active");
-  //     } else {
-  //       handleAppStateChange("inactive");
-  //     }
-  //   };
-
-  //   document.addEventListener("visibilitychange", visibilityChangeListener);
-  //   return () => {
-  //     document.removeEventListener("visibilitychange", visibilityChangeListener);
-  //   };
-  // }, []);
 
   // Initialize the app on first load
   // This will set up the database and sync data from the server
