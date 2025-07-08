@@ -62,12 +62,18 @@ export const getTomesByArchiveId = async (archiveId: string): Promise<Tome[]> =>
 };
 
 export const getTomeById = async (id: string): Promise<Tome | null> => {
-    const db = await getDb();
-    const rows = await db.select<Tome[]>(
-        `SELECT * FROM tomes WHERE id = ? LIMIT 1`,
-        [id]
-    );
-    return rows.length > 0 ? rows[0] : null;
+    try {
+        const db = await getDb();
+        const rows = await db.select<Tome[]>(
+            `SELECT * FROM tomes WHERE id = ? LIMIT 1`,
+            [id]
+        );
+        return rows.length > 0 ? rows[0] : null;
+    } catch (error) {
+        console.error("unable to get Tome ", error);
+        return null;
+    }
+    
 };
 
 export const saveTome = async (tome: Tome): Promise<void> => {

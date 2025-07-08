@@ -93,9 +93,21 @@ async function NewEntryShortcut(e: KeyboardEvent, tome: Tome, newEntryName: stri
 
 async function getLastOpenedEntry(tome: Tome) {
     const lastSyncTime = await getLastSyncedAt();
+    if (!lastSyncTime) {
+        console.warn(`No last sync time found. Cannot determine last opened entry for tome: ${tome.name}.`);
+        const firstEntry = await getEntriesByTomeId(tome.id).then(entries => entries[0]);
+        if (!firstEntry) {
+            console.warn(`No entries found for archive ${tome.name}.`);
+            return null;
+        }
+        return firstEntry;
+    }
     const lastSyncedEntries = await getUpdatedEntriesSince(lastSyncTime);
-
-    const lastModifiedEntry = lastSyncedEntries.find(entry => entry.updated_at === lastSyncTime && entry.tome_id === tome.id) || null;
+    const lastModifiedEntry = lastSyncedEntries.find(entry => entry.updated_at === lastSyncTime && entry.tome_id === tome.id);
+    if (!lastModifiedEntry) {
+        console.warn(`No recently modified tome found for archive ${tome.name}.`);
+        return null;
+    }
     return lastModifiedEntry;
 }
 

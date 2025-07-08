@@ -19,8 +19,9 @@ import {
    OpenTomeEntries} from "./Utils/AppUtils";
 import PreviewPanel from "./components/PreviewPanel";
 import NamePrompt from "./components/NamePrompt";
-import { fullSync } from "./lib/sync";
+import { getSyncManager } from "./lib/sync";
 import { getDb } from "./lib/db";
+import { setLastSyncedAt } from "./stores/dataStore";
 
 const DIVIDER_SIZE = 2; // px
 
@@ -58,7 +59,7 @@ function App() {
     // Select the last opened tome
     const lastOpenedTome = await getLastOpenedTome(selectedArchive);
     if (!lastOpenedTome) {
-      console.error("No tome found for archive:", selectedArchive);
+      console.error("last opened tome not found for archive:", selectedArchive);
       if (openedTomes.length === 0) {
         console.error("No tomes available in archive");
         return;
@@ -79,7 +80,6 @@ function App() {
       setMarkdown(await GetEntryContent(entries[0]) ?? "");
     } else {
       console.log("Last opened tome:", lastOpenedTome);
-      await SelectTome(lastOpenedTome);
       setTome(lastOpenedTome);
       const entries = await OpenTomeEntries(lastOpenedTome);
       setEntries(entries);
@@ -283,6 +283,7 @@ function App() {
         
         // Initialize the database (migrations will run automatically via Tauri)
         const db = await getDb();
+        
         console.log("✅ Database initialization completed successfully!");
         
         // Test basic database operations
@@ -302,7 +303,8 @@ function App() {
         
         // Optionally sync from server on startup
         try {
-          await fullSync();
+          await getSyncManager()?.syncFromAzure();
+          setLastSyncedAt(new Date().toISOString());
           console.log("✅ Initial sync from server completed");
         } catch (syncError) {
           console.log("⚠️ Server sync failed (this is OK if offline):", syncError);
@@ -321,7 +323,7 @@ function App() {
     const fetchArchives = async () => {
       try {
         const fetchedArchives = await GetArchives();
-        await setArchives(fetchedArchives);
+        setArchives(fetchedArchives);
       } catch (error) {
         console.error("Failed to fetch archives:", error);
       }
