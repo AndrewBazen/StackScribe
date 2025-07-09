@@ -6,5 +6,4 @@ export interface Archive {
     description?: string;
     created_at: string;
     updated_at: string;
-    tomes: Tome[]; // Optional for when loading from DB
 }

@@ -5,15 +5,15 @@ import { Archive } from "../types/archive";
 // import App from "../App"; // Removed because App is a React component, not a state container
 // Importing dataStore functions for database operations
 import { saveArchive,
-    getLastSyncedAt, getAllArchives, 
-    getArchiveById, saveTome, getTomesByArchiveId, 
-    getTomeById, saveEntry, getEntriesByTomeId, 
+    getAllArchives, 
+    getArchiveById, saveTome,
+    getTomeById, saveEntry, 
     getEntryById,
     getSortedAndUpdated,
  } from "../stores/dataStore";
 
 
-async function NewTome(archive: Archive, name: string): Promise<Tome> {
+async function CreateTome(archive: Archive, name: string): Promise<Tome> {
     const tome: Tome = {
         id: crypto.randomUUID(),
         archive_id: archive.id,
@@ -21,14 +21,13 @@ async function NewTome(archive: Archive, name: string): Promise<Tome> {
         description: "",
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        entries: [], // Initialize with an empty array
     };
 
     await saveTome(tome);
     return tome;
 }
 
-async function NewEntry(tome: Tome, title: string): Promise<Entry> {
+async function CreateEntry(tome: Tome, title: string): Promise<Entry> {
     const entry: Entry = {
         id: crypto.randomUUID(),
         tome_id: tome.id,
@@ -42,7 +41,7 @@ async function NewEntry(tome: Tome, title: string): Promise<Entry> {
     return entry;
 }
 
-async function entrySave(entry: Entry) {
+async function saveLocalEntry(entry: Entry) {
     let result = await saveEntry(entry);
     if (!result) {
         console.error(`Failed to save entry ${entry.id}`);
@@ -69,6 +68,7 @@ async function saveAllEntries(entries: Entry[]) {
     return updatedEntries;
 }
 
+// TODO: update
 async function exitApp(dirtyEntries: Entry[]) {
     // Save all entries before exiting
     if (dirtyEntries.length > 0) {
@@ -81,20 +81,20 @@ async function exitApp(dirtyEntries: Entry[]) {
 
 async function SaveShortcut(e: KeyboardEvent, entry: Entry) {
     if (e.ctrlKey && e.key === "s" && entry) {
-        return await entrySave(entry);
+        return await saveLocalEntry(entry);
     }
 }
 
 async function NewEntryShortcut(e: KeyboardEvent, tome: Tome, newEntryName: string) {
     if (e.ctrlKey && e.key === "n" && tome) {
-        return await NewEntry(tome, newEntryName);
+        return await CreateEntry(tome, newEntryName);
     }
 }
 
 async function getLastOpenedEntry(tome: Tome) {
     // Instead of using sync time, just get the most recently updated entry
     console.log(`Getting most recently updated entry for tome: ${tome.name}`);
-    const sortedEntries = await getSortedAndUpdated(tome, "entry");
+    const sortedEntries = await getSortedAndUpdated(tome, "entry") as Entry[];
     if (!sortedEntries || sortedEntries.length === 0) {
         console.warn(`No entries found for tome ${tome.name}.`);
         return null;
@@ -144,12 +144,12 @@ async function OpenEntry(entry: Entry){
 async function getLastOpenedTome(archive: Archive) {
     // Instead of using sync time, just get the most recently updated tome
     console.log(`Getting most recently updated tome for archive: ${archive.name}`);
-    const sortedTomes = await getSortedAndUpdated(archive, "tome")
+    const sortedTomes = await getSortedAndUpdated(archive, "tome") as Tome[];
     if (!sortedTomes || sortedTomes.length === 0) {
         console.warn(`No tomes found for archive ${archive.name}.`);
         return null;
     }
-    return sortedTomes[0];
+    return sortedTomes[0] as Tome;
 }
 
 async function MarkEntryDirty(entry: Entry, dirtyEntries: Entry[]){
@@ -199,9 +199,9 @@ async function GetEntryContent(entry: Entry) {
 
 async function NewTomeShortcut(e: KeyboardEvent, archive: Archive, newTomeName: string) {
     if (e.ctrlKey && e.key === "t" && archive) {
-        return await NewTome(archive, newTomeName);
+        return await CreateTome(archive, newTomeName);
     }
 }
 
-export { NewTome, NewEntry, entrySave, saveAllEntries, exitApp, NewEntryShortcut, MarkEntryDirty, SaveShortcut,
+export { CreateEntry, CreateTome, saveLocalEntry, OpenEntry, saveAllEntries, exitApp, NewEntryShortcut, MarkEntryDirty, SaveShortcut,
      CreateArchive, OpenArchive, GetArchives, GetEntryContent, NewTomeShortcut, OpenTome, getLastOpenedTome, getLastOpenedEntry };

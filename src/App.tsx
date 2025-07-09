@@ -9,18 +9,20 @@ import { Tome } from "./types/tome";
 import StartWindow from "./components/StartWindow";
 import { Archive } from "./types/archive";
 import { FilePlusIcon, GearIcon } from "@radix-ui/react-icons";
-import { AppMenuBar } from "./components/AppMenuBar"; 
+import { AppMenuBar } from "./components/AppMenuBar";
+import Stack, { IStack } from "./types/stack";
 import { 
-   NewTome, NewEntry, entrySave, saveAllEntries, exitApp,
-   SaveShortcut, SelectTome, MarkEntryDirty,
-   OpenArchive, SelectEntry, CreateArchive,
+   CreateTome, CreateEntry, saveLocalEntry, saveAllEntries, exitApp,
+   SaveShortcut, MarkEntryDirty,
+   OpenArchive, CreateArchive,
    GetArchives, GetEntryContent, OpenTome,
    getLastOpenedTome, getLastOpenedEntry,
-   OpenTomeEntries} from "./Utils/AppUtils";
+   } from "./Utils/AppUtils";
 import PreviewPanel from "./components/PreviewPanel";
 import NamePrompt from "./components/NamePrompt";
 import { getSyncManager } from "./lib/sync";
 import { getDb } from "./lib/db";
+import { getEntriesByTomeId, getTomesByArchiveId } from "./stores/dataStore";
 
 const DIVIDER_SIZE = 2; // px
 
@@ -40,64 +42,47 @@ function App() {
   const [dirtyEntries, setDirtyEntries] = useState<Entry[]>([]);
   const [ShowEntryPrompt, setShowEntryPrompt] = useState<boolean>(false);
   const [ShowTomePrompt, setShowTomePrompt] = useState<boolean>(false);
+
+  let loadedTomes = new Stack<Tome>();
+  let loadedEntries = new Stack<Entry>();
   
   // Track initialization to prevent multiple sync operations
   const isInitialized = useRef<boolean>(false);
 
   // open an archive
   const handleArchiveOpen = async (selectedArchive: Archive) => {
-    setArchive(selectedArchive);
-    if (!selectedArchive) {
-      console.error("No archive selected");
-      return;
-    }
+    // set the archive
+    setArchive(await OpenArchive(selectedArchive));
 
-    const openedTomes = await OpenArchive(selectedArchive);
+    // get and set the tomes
+    const openedTomes = await getTomesByArchiveId(selectedArchive.id);
     setTomes(openedTomes);
 
-    // Select the last opened tome
+    // attempt to Select the last opened tome
     const lastOpenedTome = await getLastOpenedTome(selectedArchive);
-    if (!lastOpenedTome) {
-      console.error("last opened tome not found for archive:", selectedArchive);
-      if (openedTomes.length === 0) {
-        console.error("No tomes available in archive");
-        return;
-      }
-      await SelectTome(openedTomes[0]);
-      setTome(openedTomes[0]);
-      console.log("opened tome:", openedTomes[0]);
-      console.log("current selected tome:", tome?.name);
-      const entries = await OpenTomeEntries(openedTomes[0]);
-      setEntries(entries);
-      
-      if (entries.length === 0) {
-        console.error("No entries found for tome:", openedTomes[0]);
-        return;
-      }
-      setEntry(entries[0]);
-      await SelectEntry(entries[0], openedTomes[0]);
-      setMarkdown(await GetEntryContent(entries[0]) ?? "");
-    } else {
-      console.log("Last opened tome:", lastOpenedTome);
-      setTome(lastOpenedTome);
-      const entries = await OpenTomeEntries(lastOpenedTome);
-      setEntries(entries);
+    if (!lastOpenedTome) { 
+      console.error("Was not able to load a tome for the selected archive."); 
+      return null;
+    }
+    for (var t of openedTomes) {
+      if (t.id === lastOpenedTome.id)
+        setTome(t);
+    }
 
-      const lastOpenedEntry = await getLastOpenedEntry(lastOpenedTome);
-      if (!lastOpenedEntry) {
-        console.error("No last opened entry found for tome:", lastOpenedTome);
-        if (entries.length === 0) {
-          console.error("No entries found for tome:", lastOpenedTome);
-          return;
-        }
-        // Use the first entry if no last opened entry is found
-        setEntry(entries[0]);
-        await SelectEntry(entries[0], lastOpenedTome);
-        setMarkdown(await GetEntryContent(entries[0]) ?? "");
-      } else {
-        setEntry(lastOpenedEntry);
-        await SelectEntry(lastOpenedEntry, lastOpenedTome);
-        setMarkdown(await GetEntryContent(lastOpenedEntry) ?? "");
+    // get and set the entries for the tome
+    const openedEntries = await getEntriesByTomeId(lastOpenedTome.id);
+    setEntries(openedEntries);
+
+    // attempt to select the last opened entry
+    const lastOpenedEntry = await getLastOpenedEntry(lastOpenedTome);
+    if (!lastOpenedEntry) {
+      console.error("No last opened entry found for tome:", lastOpenedTome);
+      return null;
+    }
+    for (var e of openedEntries) {
+      if(e.id === lastOpenedEntry.id) {
+        setEntry(e);
+        setMarkdown(e.content);
       }
     }
   };
@@ -106,42 +91,50 @@ function App() {
   const handleArchiveCreate = async (newArchive: Archive, tomeName: string) => {
     // Create the archive and persist it
     const createdArchive = await CreateArchive(newArchive);
-    setArchive(createdArchive);
-
     if (!createdArchive) {
       console.error("Failed to create archive:", newArchive);
       return;
     }
+    setArchive(createdArchive);
 
     // Create a new tome in the archive using the proper NewTome function
-    const createdTome = await NewTome(createdArchive, tomeName);
+    const createdTome = await CreateTome(createdArchive, tomeName);
+    if (!createdTome) {
+      console.error("Failed to create tome: ", tomeName);
+      return;
+    }
     setTomes([createdTome]);
     setTome(createdTome);
-
+    
     // Create a default untitled entry in the new tome
-    const newEntry = await NewEntry(createdTome, "Untitled Entry");
-    setEntries([newEntry]);
-    setEntry(newEntry);
-    setMarkdown(await GetEntryContent(newEntry) ?? "");
+    const createdEntry = await CreateEntry(createdTome, "Untitled Entry");
+    if (!createdEntry) {
+      console.error("Failed to create entry: Untitled_Entry.md")
+    }
+    setEntries([createdEntry]);
+    setEntry(createdEntry);
+    setMarkdown(createdEntry.content) ?? "";
   };
 
   // open a tome
   const handleTomeClick = async (clickedTome: Tome, entries: Entry[]) => {
-
     if (!clickedTome) {
       console.error("Selected tome does not exist.");
-      return null;
+      return;
     }
     if (tome?.id !== clickedTome.id) {
       // If a different tome is selected, set it as the new selected tome
       setTome(clickedTome);
       const openedTome = await OpenTome(clickedTome);
       if (!openedTome) {
-        console.error("Failed to open tome:", clickedTome);
+        console.error("Failed to open tome:", clickedTome.name);
         return;
       }
-      const tomeEntries = openedTome.entries as Entry[];
+      const tomeEntries = entries as Entry[];
        setEntries(tomeEntries);
+    } else {
+      console.warn("selected tome is already open: ", clickedTome.name)
+      return;
     }
   };
 
