@@ -1,20 +1,23 @@
 
 import { ChevronDownIcon } from "@radix-ui/react-icons";
 import { Tome } from "../types/tome";
+import { getEntriesByTomeId } from "../stores/dataStore";
+import { Entry } from "../types/entry";
 
 interface TomeItemProps {
     tome: Tome;
-    onTomeClick: (tome: Tome) => void;
+    onTomeClick: (tome: Tome, entries: Entry[]) => void;
     isExpanded: boolean;
 }
 
 export default function TomeItem(props: TomeItemProps) {
     const { tome, onTomeClick, isExpanded } = props;
 
-    const handleTomeClick = () => {
+    const handleTomeClick = async () => {
         // gets the entries that are in the selected tome
         // and then sends them to the entry view
-        onTomeClick(tome);
+        const entries = await getEntriesByTomeId(tome.id);
+        onTomeClick(tome, entries);
     };
 
     return (

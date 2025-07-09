@@ -9,7 +9,7 @@ import { saveArchive,
     getArchiveById, saveTome, getTomesByArchiveId, 
     getTomeById, saveEntry, getEntriesByTomeId, 
     getEntryById,
-    getUpdatedTomesSince, getUpdatedEntriesSince,
+    getSortedAndUpdated,
  } from "../stores/dataStore";
 
 
@@ -94,100 +94,89 @@ async function NewEntryShortcut(e: KeyboardEvent, tome: Tome, newEntryName: stri
 async function getLastOpenedEntry(tome: Tome) {
     // Instead of using sync time, just get the most recently updated entry
     console.log(`Getting most recently updated entry for tome: ${tome.name}`);
-    const firstEntry = await getEntriesByTomeId(tome.id).then(entries => entries[0]);
-    if (!firstEntry) {
+    const sortedEntries = await getSortedAndUpdated(tome, "entry");
+    if (!sortedEntries || sortedEntries.length === 0) {
         console.warn(`No entries found for tome ${tome.name}.`);
         return null;
     }
-    return firstEntry;
+    return sortedEntries[0];
 }
 
-async function OpenTome(tome: Tome, currentTome?: Tome) {
-    if (currentTome && currentTome.id === tome.id) {
-        console.log(`Tome ${tome.name} is already open.`);
-        return currentTome;
-    }
 
+/** OpenTome - gets a specified tome from the database and returns it to the app
+ *
+ * @param {Tome} tome
+ * @param {Tome} [currentTome]
+ * @return {*} 
+ */
+async function OpenTome(tome: Tome): Promise<Tome | null> {
+    // get the tome from the database
     const existingTome = await getTomeById(tome.id);
     if (!existingTome) {
         console.warn(`Tome ${tome.name} does not exist.`);
         return null;
     }
-
-    await SelectTome(existingTome);
+    // return the tome
     return existingTome;
 }
 
-async function OpenTomeEntries(tome: Tome) {
-    return await getEntriesByTomeId(tome.id);
-}
-
-async function SelectEntry(entry: Entry, tome: Tome) { 
-    if (!entry || !tome) {
+/** OpenEntry - gets the entry data from the database and returns it.
+ *
+ * @param {Entry} entry
+ * @param {Tome} tome
+ * @return {Entry}
+ */
+async function OpenEntry(entry: Entry){ 
+    // database
+    if (!entry) {
         console.error("Invalid entry or tome provided.");
         return null;
     }
-    // TODO: Implement selection logic using context, props, or state management.
-    // For now, just log the selection.
-    console.log(`Selecting entry ${entry.name} in tome ${tome.name}.`);
-    return entry;
+    const returnedEntry = await getEntryById(entry.id);
+    return returnedEntry;
 }
 
-async function SelectTome(tome: Tome | null) {
-    if (!tome) {
-        console.error("Invalid tome provided.");
-        return null;
-    }
-    const returnedTome = getTomeById(tome.id);
-    if (!returnedTome) {
-        console.warn(`Tome ${tome.name} does not exist.`);
-        return null;
-    }
-    return returnedTome;
-}
-
+/** getLastOpenedTome - gets the tome that was last modified in the selected archive
+ *
+ * @param {Archive} archive
+ * @return {*} 
+ */
 async function getLastOpenedTome(archive: Archive) {
     // Instead of using sync time, just get the most recently updated tome
     console.log(`Getting most recently updated tome for archive: ${archive.name}`);
-    const firstTome = await getTomesByArchiveId(archive.id).then(tomes => tomes[0]);
-    if (!firstTome) {
+    const sortedTomes = await getSortedAndUpdated(archive, "tome")
+    if (!sortedTomes || sortedTomes.length === 0) {
         console.warn(`No tomes found for archive ${archive.name}.`);
         return null;
     }
-    return firstTome;
+    return sortedTomes[0];
 }
 
-async function MarkEntryDirty(entry: Entry, dirtyEntries: Entry[]) {
+async function MarkEntryDirty(entry: Entry, dirtyEntries: Entry[]){
     if (entry && !dirtyEntries.includes(entry)) {
         dirtyEntries.push(entry);
     }
     return dirtyEntries;
 }
 
-async function SelectArchive(archive: Archive) {
-    return getArchiveById(archive.id).then((selectedArchive) => {
-        if (!selectedArchive) {
-                console.warn(`Archive ${archive.name} does not exist.`);
-            return null;
-        }
-        return selectedArchive;
-    });
+async function OpenArchive(archive: Archive): Promise<Archive | null> {
+    const selectedArchive = await getArchiveById(archive.id)
+    if (!selectedArchive) {
+            console.warn(`Archive ${archive.name} does not exist.`);
+        return null;
+    }
+    return selectedArchive;
 }
 
-async function CreateArchive(archive: Archive) {
+async function CreateArchive(archive: Archive): Promise<Archive | null> {
+    if (!archive) {
+        console.error("Invalid archive, unable to create new archive");
+        return null;
+    }
     saveArchive(archive).then(() => {
         console.log(`Archive ${archive.name} created successfully.`);
     });
     return archive;
-}
-
-async function OpenArchive(archive: Archive) {
-    const tomes = await getTomesByArchiveId(archive.id);
-    if (tomes.length === 0) {
-        console.warn(`No tomes found for archive ${archive.name}.`);
-        return [];
-    }
-    return tomes;
 }
 
 async function GetArchives() {
@@ -200,13 +189,12 @@ async function GetArchives() {
 }
 
 async function GetEntryContent(entry: Entry) {
-    return await getEntryById(entry.id).then((fetchedEntry) => {
-        if (!fetchedEntry) {
-            console.warn(`Entry ${entry.name} does not exist.`);
-            return null;
-        }
-        return fetchedEntry.content;
-    }); 
+    const fetchedEntry = await getEntryById(entry.id);
+    if (!fetchedEntry?.content) {
+        console.error("Unable to fetch entry content.");
+        return null;
+    }
+    return fetchedEntry.content;
 }
 
 async function NewTomeShortcut(e: KeyboardEvent, archive: Archive, newTomeName: string) {
@@ -215,5 +203,5 @@ async function NewTomeShortcut(e: KeyboardEvent, archive: Archive, newTomeName: 
     }
 }
 
-export { NewTome, NewEntry, entrySave, saveAllEntries, exitApp, NewEntryShortcut, SelectTome, MarkEntryDirty, SaveShortcut,
-SelectArchive, CreateArchive, OpenArchive, SelectEntry, GetArchives, GetEntryContent, NewTomeShortcut, OpenTome, getLastOpenedTome, getLastOpenedEntry, OpenTomeEntries };
+export { NewTome, NewEntry, entrySave, saveAllEntries, exitApp, NewEntryShortcut, MarkEntryDirty, SaveShortcut,
+     CreateArchive, OpenArchive, GetArchives, GetEntryContent, NewTomeShortcut, OpenTome, getLastOpenedTome, getLastOpenedEntry };

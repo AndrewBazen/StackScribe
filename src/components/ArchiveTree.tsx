@@ -3,11 +3,12 @@ import TomeList from "./TomeList";
 import TreeHeader from "./TreeHeader";
 import { Tome } from "../types/tome";
 import { Archive } from "../types/archive";
+import { Entry } from "../types/entry";
 
 interface ArchiveTreeProps {
     archive: Archive;
     tomes: Tome[];
-    onTomeClick: (tome: Tome) => void;
+    onTomeClick: (tome: Tome, entries: Entry[]) => void;
 }
 
 export default function ArchiveTree(props: ArchiveTreeProps) {
@@ -16,8 +17,8 @@ export default function ArchiveTree(props: ArchiveTreeProps) {
     const handleBackClick = () => {
         setIsExpanded(!isExpanded);
     };
-    const handleTomeClick = (tome: Tome) => {
-        onTomeClick(tome);
+    const handleTomeClick = (tome: Tome, entries: Entry[]) => {
+        onTomeClick(tome, entries);
     };
 
     return (

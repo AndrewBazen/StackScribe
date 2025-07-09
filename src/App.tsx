@@ -126,27 +126,15 @@ function App() {
   };
 
   // open a tome
-  const handleTomeClick = async (clickedTome: Tome) => {
+  const handleTomeClick = async (clickedTome: Tome, entries: Entry[]) => {
 
-    if (!tome) {
-      console.log("No tome currently selected, opening clicked tome:", clickedTome);
-      // If no tome is currently selected, select the clicked tome
-      const selectedTome = await SelectTome(clickedTome);
-      setTome(selectedTome);
-      const openedTome = await OpenTome(clickedTome);
-      const tomeEntries = await OpenTomeEntries(openedTome as Tome);
-      setEntries(tomeEntries);
+    if (!clickedTome) {
+      console.error("Selected tome does not exist.");
+      return null;
     }
-    else if (tome.id !== clickedTome.id) {
-      // If a different tome is selected, ensure any unsaved changes are handled
-      if (dirtyEntries.length > 0) {
-        // If the current entry is dirty, prompt to save it
-        const shouldSave = window.confirm(`Save changes before switching tomes?`);
-        if (shouldSave) {
-          setDirtyEntries(await saveAllEntries(dirtyEntries as Entry[]));
-        }
-      }
-       setTome(clickedTome);
+    if (tome?.id !== clickedTome.id) {
+      // If a different tome is selected, set it as the new selected tome
+      setTome(clickedTome);
       const openedTome = await OpenTome(clickedTome);
       if (!openedTome) {
         console.error("Failed to open tome:", clickedTome);
@@ -379,7 +367,7 @@ function App() {
       {/* LEFT PANEL */}
       <div className="side-panel" style={{ width: leftWidth }}>
         {/* TODO: right-click context menu for tomes */}
-        {archive && <div className="tree-view"><ArchiveTree archive={archive} tomes={tomes} onTomeClick={(tome: Tome) => {handleTomeClick(tome)}}/></div>}
+        {archive && <div className="tree-view"><ArchiveTree archive={archive} tomes={tomes} onTomeClick={(tome: Tome, entries: Entry[]) => {handleTomeClick(tome, entries)}}/></div>}
         <div className="panel-nav">
           <NavIconButton icon={<GearIcon/>} onClick={handlePreferences} />
           <NavIconButton icon={<FilePlusIcon/>} onClick={() => handleShowEntryPrompt(true)} />
