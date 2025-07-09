@@ -228,11 +228,23 @@ async function handleSyncDownload(
     connection = await createConnection();
     context.info('✅ Database connection established for download');
     
-    const [archives, tomes, entries] = await Promise.all([
-      queryData(connection, "SELECT * FROM archives WHERE user_id = @userId", { userId }),
-      queryData(connection, "SELECT * FROM tomes WHERE user_id = @userId", { userId }),
-      queryData(connection, "SELECT * FROM entries WHERE user_id = @userId", { userId })
-    ]);
+    // Execute each query separately to avoid connection state issues
+    const archives = await queryData(connection, "SELECT * FROM archives WHERE user_id = @userId", { userId });
+    context.info(`📊 Found ${archives.length} archives for user ${userId}`);
+    
+    // Close and recreate connection for next query to avoid state issues
+    connection.close();
+    connection = await createConnection();
+    
+    const tomes = await queryData(connection, "SELECT * FROM tomes WHERE user_id = @userId", { userId });
+    context.info(`📊 Found ${tomes.length} tomes for user ${userId}`);
+    
+    // Close and recreate connection for final query
+    connection.close();
+    connection = await createConnection();
+    
+    const entries = await queryData(connection, "SELECT * FROM entries WHERE user_id = @userId", { userId });
+    context.info(`📊 Found ${entries.length} entries for user ${userId}`);
     
     context.info(`Downloaded sync data for user ${userId}: ${archives.length} archives, ${tomes.length} tomes, ${entries.length} entries`);
     
@@ -259,7 +271,11 @@ async function handleSyncDownload(
     };
   } finally {
     if (connection) {
-      connection.close();
+      try {
+        connection.close();
+      } catch (closeError) {
+        context.warn('⚠️ Error closing connection:', closeError);
+      }
     }
   }
 }
@@ -282,14 +298,15 @@ async function createConnection(): Promise<Connection> {
         database: process.env.AZURE_SQL_DATABASE!,
         encrypt: true,
         rowCollectionOnRequestCompletion: true,
-        connectTimeout: 30000,
-        requestTimeout: 30000,
-        // Add some additional options to help with connection stability
+        connectTimeout: 15000, // Reduced timeout
+        requestTimeout: 15000, // Reduced timeout
         trustServerCertificate: false,
         enableArithAbort: true,
-        // Disable connection pooling to avoid state issues
-        connectionRetryInterval: 500,
-        maxRetriesOnTransientErrors: 3
+        connectionRetryInterval: 200,
+        maxRetriesOnTransientErrors: 2,
+        // Disable connection pooling completely for now
+        enableAnsiNullDefault: true,
+        cancelTimeout: 5000
       }
     };
 
@@ -315,13 +332,19 @@ async function createConnection(): Promise<Connection> {
         reject(new Error(`Connection error: ${err.message}`));
       });
       
-      // Add timeout
-      setTimeout(() => {
+      // Add timeout with cleanup
+      const timeoutId = setTimeout(() => {
         if (!isResolved) {
           isResolved = true;
-          reject(new Error('Connection timeout after 30 seconds'));
+          connection.close();
+          reject(new Error('Connection timeout after 15 seconds'));
         }
-      }, 30000);
+      }, 15000);
+      
+      // Clear timeout if connection succeeds
+      connection.on('connect', () => {
+        clearTimeout(timeoutId);
+      });
       
       connection.connect();
     });

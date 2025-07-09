@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { fullSync, syncFromServer, syncToServer } from '../lib/sync';
+import { fullSync, getSyncManager } from '../lib/sync';
 
 export interface SyncStatus {
     isLoading: boolean;
@@ -39,11 +39,25 @@ export const useSyncManager = () => {
     }, [handleSync]);
 
     const performDownloadSync = useCallback(() => {
-        return handleSync(syncFromServer);
+        return handleSync(async () => {
+            const syncManager = getSyncManager();
+            if (syncManager) {
+                await syncManager.syncFromAzure();
+            } else {
+                throw new Error('Sync manager not initialized');
+            }
+        });
     }, [handleSync]);
 
     const performUploadSync = useCallback(() => {
-        return handleSync(syncToServer);
+        return handleSync(async () => {
+            const syncManager = getSyncManager();
+            if (syncManager) {
+                await syncManager.syncToAzure();
+            } else {
+                throw new Error('Sync manager not initialized');
+            }
+        });
     }, [handleSync]);
 
     const clearError = useCallback(() => {

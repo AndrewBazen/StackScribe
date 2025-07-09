@@ -92,23 +92,14 @@ async function NewEntryShortcut(e: KeyboardEvent, tome: Tome, newEntryName: stri
 }
 
 async function getLastOpenedEntry(tome: Tome) {
-    const lastSyncTime = await getLastSyncedAt();
-    if (!lastSyncTime) {
-        console.warn(`No last sync time found. Cannot determine last opened entry for tome: ${tome.name}.`);
-        const firstEntry = await getEntriesByTomeId(tome.id).then(entries => entries[0]);
-        if (!firstEntry) {
-            console.warn(`No entries found for archive ${tome.name}.`);
-            return null;
-        }
-        return firstEntry;
-    }
-    const lastSyncedEntries = await getUpdatedEntriesSince(lastSyncTime);
-    const lastModifiedEntry = lastSyncedEntries.find(entry => entry.updated_at === lastSyncTime && entry.tome_id === tome.id);
-    if (!lastModifiedEntry) {
-        console.warn(`No recently modified tome found for archive ${tome.name}.`);
+    // Instead of using sync time, just get the most recently updated entry
+    console.log(`Getting most recently updated entry for tome: ${tome.name}`);
+    const firstEntry = await getEntriesByTomeId(tome.id).then(entries => entries[0]);
+    if (!firstEntry) {
+        console.warn(`No entries found for tome ${tome.name}.`);
         return null;
     }
-    return lastModifiedEntry;
+    return firstEntry;
 }
 
 async function OpenTome(tome: Tome, currentTome?: Tome) {
@@ -156,23 +147,14 @@ async function SelectTome(tome: Tome | null) {
 }
 
 async function getLastOpenedTome(archive: Archive) {
-    const lastSyncTime = await getLastSyncedAt();
-    if (!lastSyncTime) {
-        console.warn("No last sync time found. Cannot determine last opened tome.");
-        const firstTome = await getTomesByArchiveId(archive.id).then(tomes => tomes[0]);
-        if (!firstTome) {
-            console.warn(`No tomes found for archive ${archive.name}.`);
-            return null;
-        }
-        return firstTome;
-    }
-    const lastSyncedTomes = await getUpdatedTomesSince(lastSyncTime);
-    const lastModifiedTome = lastSyncedTomes.find(tome => tome.updated_at === lastSyncTime && tome.archive_id === archive.id);
-    if (!lastModifiedTome) {
-        console.warn(`No recently modified tome found for archive ${archive.name}.`);
+    // Instead of using sync time, just get the most recently updated tome
+    console.log(`Getting most recently updated tome for archive: ${archive.name}`);
+    const firstTome = await getTomesByArchiveId(archive.id).then(tomes => tomes[0]);
+    if (!firstTome) {
+        console.warn(`No tomes found for archive ${archive.name}.`);
         return null;
     }
-    return lastModifiedTome;
+    return firstTome;
 }
 
 async function MarkEntryDirty(entry: Entry, dirtyEntries: Entry[]) {

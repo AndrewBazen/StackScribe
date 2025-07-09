@@ -1,3 +1,7 @@
+// NOTE: This file is deprecated and not used. Use sync.ts instead.
+// The functions below have been commented out to avoid TypeScript errors.
+
+/*
 import { 
     saveArchive,
     getLastSyncedAt,
@@ -176,3 +180,4 @@ export const uploadArchives = async () => {
 
     return updatedLocalArchives;
 };
+*/

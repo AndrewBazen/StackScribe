@@ -21,7 +21,6 @@ import PreviewPanel from "./components/PreviewPanel";
 import NamePrompt from "./components/NamePrompt";
 import { getSyncManager } from "./lib/sync";
 import { getDb } from "./lib/db";
-import { setLastSyncedAt } from "./stores/dataStore";
 
 const DIVIDER_SIZE = 2; // px
 
@@ -304,7 +303,6 @@ function App() {
         // Optionally sync from server on startup
         try {
           await getSyncManager()?.syncFromAzure();
-          setLastSyncedAt(new Date().toISOString());
           console.log("✅ Initial sync from server completed");
         } catch (syncError) {
           console.log("⚠️ Server sync failed (this is OK if offline):", syncError);

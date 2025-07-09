@@ -56,10 +56,35 @@ const Auth: React.FC = () => {
     }
   };
 
+  const handleLogout = async () => {
+    try {
+      console.log('🚪 Logging out...');
+      await instance.logoutRedirect({
+        postLogoutRedirectUri: window.location.origin
+      });
+    } catch (error) {
+      console.error('❌ Logout failed:', error);
+    }
+  };
+
   return (
     <>
       <AuthenticatedTemplate>
-        <App />
+        <div>
+          <div style={{ position: 'absolute', top: '10px', right: '10px', zIndex: 1000 }}>
+            <button onClick={handleLogout} style={{ 
+              padding: '8px 16px', 
+              backgroundColor: '#dc3545', 
+              color: 'white', 
+              border: 'none', 
+              borderRadius: '4px',
+              cursor: 'pointer'
+            }}>
+              Logout
+            </button>
+          </div>
+          <App />
+        </div>
       </AuthenticatedTemplate>
 
       <UnauthenticatedTemplate>

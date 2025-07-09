@@ -1,4 +1,5 @@
 import { getDb } from './db';
+import { setLastSyncedAt } from '../stores/dataStore';
 import { Archive } from '../types/archive';
 import { Tome } from '../types/tome';
 import { Entry } from '../types/entry';
@@ -20,8 +21,22 @@ export class AzureSyncManager implements SyncManager {
     this.msalInstance = msalInstance;
     this.account = account;
     // Update this URL to match your deployed Azure Function
-    this.azureFunctionUrl = import.meta.env.REACT_APP_AZURE_FUNCTION_URL || 
-      'https://stackscribe-sync-exaycnehhqgxdhen.westeurope-01.azurewebsites.net';
+    this.azureFunctionUrl = import.meta.env.VITE_AZURE_FUNCTION_URL;
+    console.log('🔗 Azure Function URL:', this.azureFunctionUrl);
+  }
+
+  private getUserId(): string {
+    // Extract user ID using the same logic as the Azure Function
+    if (this.account?.localAccountId) {
+      return this.account.localAccountId;
+    }
+    if (this.account?.homeAccountId) {
+      return this.account.homeAccountId.split('.')[0]; // Remove tenant part
+    }
+    if (this.account?.username) {
+      return this.account.username;
+    }
+    throw new Error('Could not extract user ID from account');
   }
 
   async syncToAzure(): Promise<void> {
@@ -63,6 +78,10 @@ export class AzureSyncManager implements SyncManager {
 
       const result = await response.json();
       console.log('✅ Sync to Azure completed successfully:', result);
+      
+      // Update last sync timestamp
+      const userId = this.getUserId();
+      await setLastSyncedAt(new Date().toISOString(), userId);
     } catch (error) {
       console.error('❌ Sync to Azure failed:', error);
       throw error;
@@ -85,6 +104,19 @@ export class AzureSyncManager implements SyncManager {
         account: this.account
       });
 
+      console.log('🔑 Token acquired, length:', tokenResponse.accessToken.length);
+      // Log part of the token payload for debugging (don't log sensitive data in production)
+      try {
+        const payload = JSON.parse(atob(tokenResponse.accessToken.split('.')[1]));
+        console.log('👤 Token payload userId candidates:', {
+          sub: payload.sub,
+          oid: payload.oid,
+          preferred_username: payload.preferred_username
+        });
+      } catch (e) {
+        console.warn('⚠️ Could not parse token payload for debugging');
+      }
+
       // Fetch data from Azure Function
       const response = await fetch(`${this.azureFunctionUrl}/api/sync`, {
         method: 'GET',
@@ -93,9 +125,20 @@ export class AzureSyncManager implements SyncManager {
         }
       });
 
+      console.log('📡 Response status:', response.status, response.statusText);
+
       if (!response.ok) {
         const errorText = await response.text();
+        console.error('❌ Response error details:', errorText);
         throw new Error(`Sync failed: ${response.status} ${response.statusText} - ${errorText}`);
+      }
+
+      // Check if response is actually JSON
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const responseText = await response.text();
+        console.error('❌ Non-JSON response received:', responseText.substring(0, 200));
+        throw new Error(`Expected JSON response but got ${contentType}. Response: ${responseText.substring(0, 100)}...`);
       }
 
       const result = await response.json();
@@ -103,47 +146,120 @@ export class AzureSyncManager implements SyncManager {
 
       console.log(`📊 Received ${archives.length} archives, ${tomes.length} tomes, ${entries.length} entries from Azure`);
 
-      // Save data to local SQLite
+      // Save data to local SQLite with retry logic for database locks
       const db = await getDb();
       
-      // Use transactions for better performance and consistency
-      await db.execute('BEGIN TRANSACTION');
+      // Add retry logic for database lock issues with exponential backoff
+      const maxRetries = 5;
+      let retryCount = 0;
       
-      try {
-        // Clear existing data (you might want to implement smarter merging logic)
-        await db.execute('DELETE FROM entries');
-        await db.execute('DELETE FROM tomes');
-        await db.execute('DELETE FROM archives');
+      while (retryCount < maxRetries) {
+        try {
+          // First, ensure any hanging transactions are rolled back
+          try {
+            await db.execute('ROLLBACK');
+          } catch (rollbackError) {
+            // Ignore rollback errors if no transaction is active
+          }
+          
+          // Wait a bit longer between retries for SQLite locks
+          if (retryCount > 0) {
+            const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 5000); // Exponential backoff, max 5 seconds
+            console.warn(`⚠️ Database locked, waiting ${delay}ms before retry ${retryCount}/${maxRetries}...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+          }
+          
+          // Use a simpler approach - try without transaction first
+          if (retryCount >= 2) {
+            console.log('🔄 Trying without transaction...');
+            // Clear existing data
+            await db.execute('DELETE FROM entries');
+            await db.execute('DELETE FROM tomes');
+            await db.execute('DELETE FROM archives');
 
-        // Insert archives
-        for (const archive of archives) {
-          await db.execute(
-            'INSERT INTO archives (id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-            [archive.id, archive.name, archive.description, archive.created_at, archive.updated_at]
-          );
+            // Insert archives
+            for (const archive of archives) {
+              await db.execute(
+                'INSERT INTO archives (id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+                [archive.id, archive.name, archive.description, archive.created_at, archive.updated_at]
+              );
+            }
+
+            // Insert tomes
+            for (const tome of tomes) {
+              await db.execute(
+                'INSERT INTO tomes (id, archive_id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+                [tome.id, tome.archive_id, tome.name, tome.description, tome.created_at, tome.updated_at]
+              );
+            }
+
+            // Insert entries
+            for (const entry of entries) {
+              await db.execute(
+                'INSERT INTO entries (id, tome_id, name, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+                [entry.id, entry.tome_id, entry.name, entry.content, entry.created_at, entry.updated_at]
+              );
+            }
+          } else {
+            // Use transaction with proper timeout handling
+            await db.execute('BEGIN IMMEDIATE TRANSACTION');
+            
+            try {
+              // Clear existing data (you might want to implement smarter merging logic)
+              await db.execute('DELETE FROM entries');
+              await db.execute('DELETE FROM tomes');
+              await db.execute('DELETE FROM archives');
+
+              // Insert archives
+              for (const archive of archives) {
+                await db.execute(
+                  'INSERT INTO archives (id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+                  [archive.id, archive.name, archive.description, archive.created_at, archive.updated_at]
+                );
+              }
+
+              // Insert tomes
+              for (const tome of tomes) {
+                await db.execute(
+                  'INSERT INTO tomes (id, archive_id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+                  [tome.id, tome.archive_id, tome.name, tome.description, tome.created_at, tome.updated_at]
+                );
+              }
+
+              // Insert entries
+              for (const entry of entries) {
+                await db.execute(
+                  'INSERT INTO entries (id, tome_id, name, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+                  [entry.id, entry.tome_id, entry.name, entry.content, entry.created_at, entry.updated_at]
+                );
+              }
+
+              await db.execute('COMMIT');
+            } catch (transactionError) {
+              await db.execute('ROLLBACK');
+              throw transactionError;
+            }
+          }
+          
+          console.log('✅ Sync from Azure completed successfully');
+          
+          // Update last sync timestamp
+          const userId = this.getUserId();
+          await setLastSyncedAt(new Date().toISOString(), userId);
+          
+          break; // Success, exit retry loop
+          
+        } catch (error) {
+          retryCount++;
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          
+          if (errorMessage.includes('database is locked') && retryCount < maxRetries) {
+            continue; // Retry
+          }
+          
+          // If it's not a lock error or we've exhausted retries, throw the error
+          throw error;
         }
-
-        // Insert tomes
-        for (const tome of tomes) {
-          await db.execute(
-            'INSERT INTO tomes (id, archive_id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-            [tome.id, tome.archive_id, tome.name, tome.description, tome.created_at, tome.updated_at]
-          );
-        }
-
-        // Insert entries
-        for (const entry of entries) {
-          await db.execute(
-            'INSERT INTO entries (id, tome_id, name, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-            [entry.id, entry.tome_id, entry.name, entry.content, entry.created_at, entry.updated_at]
-          );
-        }
-
-        await db.execute('COMMIT');
-        console.log('✅ Sync from Azure completed successfully');
-      } catch (error) {
-        await db.execute('ROLLBACK');
-        throw error;
       }
     } catch (error) {
       console.error('❌ Sync from Azure failed:', error);

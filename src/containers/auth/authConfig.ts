@@ -32,6 +32,7 @@ export const loginRequest = {
     "User.Read"
     // Remove the Azure Function URL scope for now - we'll handle this differently
   ],
+  prompt: "select_account" // This will always show account selection
 };
 
 export { msalConfig };

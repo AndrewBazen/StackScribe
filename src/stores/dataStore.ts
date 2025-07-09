@@ -170,19 +170,19 @@ export const getUpdatedEntriesSince = async (lastSyncedAt: string | null): Promi
 // Sync metadata
 const LAST_SYNCED_KEY = 'last_synced_at';
 
-export const getLastSyncedAt = async (): Promise<string | null> => {
+export const getLastSyncedAt = async (userId: string): Promise<string | null> => {
     const db = await getDb();
     const res = await db.select<{ value: string }[]>(
-        `SELECT value FROM user_sync_metadata WHERE key = ? LIMIT 1`,
-        [LAST_SYNCED_KEY]
+        `SELECT value FROM user_sync_metadata WHERE user_id = ? AND key = ? LIMIT 1`,
+        [userId, LAST_SYNCED_KEY]
     );
     return res.length > 0 ? res[0].value : null;
 };
 
-export const setLastSyncedAt = async (timestamp: string) => {
+export const setLastSyncedAt = async (timestamp: string, userId: string) => {
     const db = await getDb();
     await db.execute(
-        `INSERT OR REPLACE INTO user_sync_metadata (key, value) VALUES (?, ?)`,
-        [LAST_SYNCED_KEY, timestamp]
+        `INSERT OR REPLACE INTO user_sync_metadata (user_id, key, value, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
+        [userId, LAST_SYNCED_KEY, timestamp]
     );
 };
