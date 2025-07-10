@@ -1,0 +1,20 @@
+
+   .titlebar{
+     height:32px;
+     display:flex;
+     justify-content:space-between;
+     align-items:center;
+     padding:0 8px;
+     background:#151515;            /* your dark theme */
+     border-bottom:1px solid #50EFB8;/* accent line */
+     user-select:none;
+   }
+   .titlebar-left{display:flex;gap:8px;align-items:center;color:#fff;font-size:13px;}
+   .titlebar-buttons button{
+     width:34px;height:100%;
+     border:none;background:transparent;color:#fff;font-size:13px;
+   }
+   .titlebar-buttons button:hover{background:#2a2a2a;}
+   .titlebar-buttons button:last-child:hover{background:#e53935;color:#000;}
+
+

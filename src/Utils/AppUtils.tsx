@@ -42,6 +42,8 @@ async function CreateEntry(tome: Tome, title: string): Promise<Entry> {
 }
 
 async function saveLocalEntry(entry: Entry) {
+    // Refresh timestamp so database considers this a newer version
+    entry.updated_at = new Date().toISOString();
     let result = await saveEntry(entry);
     if (!result) {
         console.error(`Failed to save entry ${entry.id}`);
@@ -56,6 +58,7 @@ async function saveLocalEntry(entry: Entry) {
 async function saveAllEntries(entries: Entry[]) {
     let updatedEntries: Entry[] = [];
     for (const entry of entries) {
+        entry.updated_at = new Date().toISOString();
         let result = await saveEntry(entry);
         if (!result) {
             console.error(`Failed to save entry ${entry.id}`);
@@ -153,10 +156,12 @@ async function getLastOpenedTome(archive: Archive) {
 }
 
 async function MarkEntryDirty(entry: Entry, dirtyEntries: Entry[]){
-    if (entry && !dirtyEntries.includes(entry)) {
-        dirtyEntries.push(entry);
+    if (!entry) return dirtyEntries;
+    // Return a fresh array so React state updates trigger a re-render
+    if (dirtyEntries.some(e => e.id === entry.id)) {
+        return dirtyEntries;
     }
-    return dirtyEntries;
+    return [...dirtyEntries, entry];
 }
 
 async function OpenArchive(archive: Archive): Promise<Archive | null> {

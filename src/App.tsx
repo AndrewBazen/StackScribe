@@ -8,7 +8,7 @@ import ArchiveTree from "./components/ArchiveTree";
 import { Tome } from "./types/tome";  
 import StartWindow from "./components/StartWindow";
 import { Archive } from "./types/archive";
-import { FilePlusIcon, GearIcon } from "@radix-ui/react-icons";
+import { FilePlusIcon, GearIcon, ChevronLeftIcon, ChevronRightIcon } from "@radix-ui/react-icons";
 import { AppMenuBar } from "./components/AppMenuBar";
 import Stack, { IStack } from "./types/stack";
 import { 
@@ -20,16 +20,20 @@ import {
    } from "./Utils/AppUtils";
 import PreviewPanel from "./components/PreviewPanel";
 import NamePrompt from "./components/NamePrompt";
-import { getSyncManager } from "./lib/sync";
+import { getSyncManager, SyncStatus } from "./lib/sync";
 import { getDb } from "./lib/db";
-import { getEntriesByTomeId, getTomesByArchiveId } from "./stores/dataStore";
+import { getEntriesByTomeId, getTomesByArchiveId, saveEntry } from "./stores/dataStore";
+import TabBar from "./components/TabBar";
+import logo from "../src-tauri/icons/icon.png";
+import TitleBar from "./components/TitleBar";
+import * as ContextMenu from "@radix-ui/react-context-menu";
 
 const DIVIDER_SIZE = 2; // px
 
 type DragTarget = null | "left" | "right";
 
 function App() {
-  const [leftWidth, setLeftWidth] = useState(250);   // side panel
+  const [leftWidth, setLeftWidth] = useState(200);   // side panel
   const [rightWidth, setRightWidth] = useState(300); // preview panel
   const [dragging, setDragging] = useState<DragTarget>(null);
   const [markdown, setMarkdown] = useState("# Hello, World!\n\n*Write some markdown...*");
@@ -42,53 +46,48 @@ function App() {
   const [dirtyEntries, setDirtyEntries] = useState<Entry[]>([]);
   const [ShowEntryPrompt, setShowEntryPrompt] = useState<boolean>(false);
   const [ShowTomePrompt, setShowTomePrompt] = useState<boolean>(false);
-
-  let loadedTomes = new Stack<Tome>();
-  let loadedEntries = new Stack<Entry>();
+  const [tabbedEntries, setTabbedEntries] = useState<Entry[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [panelsVisible, setPanelsVisible] = useState<boolean>(true);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>({
+    isInitializing: false,
+    isSyncing: false,
+    isReady: false,
+    error: null
+  });
   
   // Track initialization to prevent multiple sync operations
   const isInitialized = useRef<boolean>(false);
 
   // open an archive
   const handleArchiveOpen = async (selectedArchive: Archive) => {
+    // Prevent archive opening if sync is not ready
+    if (!syncStatus.isReady) {
+      console.warn('⚠️ Cannot open archive while sync is in progress');
+      return;
+    }
+
     // set the archive
     setArchive(await OpenArchive(selectedArchive));
 
     // get and set the tomes
     const openedTomes = await getTomesByArchiveId(selectedArchive.id);
     setTomes(openedTomes);
-
-    // attempt to Select the last opened tome
-    const lastOpenedTome = await getLastOpenedTome(selectedArchive);
-    if (!lastOpenedTome) { 
-      console.error("Was not able to load a tome for the selected archive."); 
-      return null;
-    }
-    for (var t of openedTomes) {
-      if (t.id === lastOpenedTome.id)
-        setTome(t);
-    }
-
-    // get and set the entries for the tome
-    const openedEntries = await getEntriesByTomeId(lastOpenedTome.id);
-    setEntries(openedEntries);
-
-    // attempt to select the last opened entry
-    const lastOpenedEntry = await getLastOpenedEntry(lastOpenedTome);
-    if (!lastOpenedEntry) {
-      console.error("No last opened entry found for tome:", lastOpenedTome);
-      return null;
-    }
-    for (var e of openedEntries) {
-      if(e.id === lastOpenedEntry.id) {
-        setEntry(e);
-        setMarkdown(e.content);
-      }
-    }
+    // Clear any currently selected tome and entries; user will choose
+    setTome(null);
+    setEntries([]);
+    setEntry(null);
+    setTabbedEntries([]);
   };
 
   // create a new archive and a new tome with an untitled entry
   const handleArchiveCreate = async (newArchive: Archive, tomeName: string) => {
+    // Prevent archive creation if sync is not ready
+    if (!syncStatus.isReady) {
+      console.warn('⚠️ Cannot create archive while sync is in progress');
+      return;
+    }
+
     // Create the archive and persist it
     const createdArchive = await CreateArchive(newArchive);
     if (!createdArchive) {
@@ -113,7 +112,61 @@ function App() {
     }
     setEntries([createdEntry]);
     setEntry(createdEntry);
+    setTabbedEntries([...tabbedEntries, createdEntry]);
+    handleCreateTab(createdEntry);
     setMarkdown(createdEntry.content) ?? "";
+  };
+
+  const handleCreateTab = (entry: Entry) => {
+    setTabbedEntries(prev => {
+      if (prev.some(e => e.id === entry.id)) return prev;
+      return [...prev, entry];
+    });
+    setActiveTabId(entry.id);
+  }
+
+  // When user clicks a tab in the TabBar
+  const handleTabSelect = (id: string) => {
+    setActiveTabId(id);
+    const selected = tabbedEntries.find(e => e.id === id);
+    if (selected) {
+      setEntry(selected);
+      setMarkdown(selected.content ?? "");
+    }
+  };
+
+  // Close (remove) a tab
+  const handleTabClose = (id: string) => {
+    setTabbedEntries(prev => {
+      const remaining = prev.filter(e => e.id !== id);
+      // Update active tab if needed
+      if (id === activeTabId) {
+        if (remaining.length > 0) {
+          const newActive = remaining[remaining.length - 1];
+          setActiveTabId(newActive.id);
+          setEntry(newActive);
+          setMarkdown(newActive.content ?? "");
+        } else {
+          setActiveTabId(null);
+          setEntry(null);
+          setMarkdown("");
+        }
+      }
+      return remaining;
+    });
+  };
+
+  // Drag-to-reorder tabs
+  const handleTabReorder = (dragId: string, targetId: string) => {
+    setTabbedEntries(prev => {
+      const dragIndex = prev.findIndex(e => e.id === dragId);
+      const targetIndex = prev.findIndex(e => e.id === targetId);
+      if (dragIndex === -1 || targetIndex === -1) return prev;
+      const reordered = [...prev];
+      const [dragged] = reordered.splice(dragIndex, 1);
+      reordered.splice(targetIndex, 0, dragged);
+      return reordered;
+    });
   };
 
   // open a tome
@@ -125,11 +178,6 @@ function App() {
     if (tome?.id !== clickedTome.id) {
       // If a different tome is selected, set it as the new selected tome
       setTome(clickedTome);
-      const openedTome = await OpenTome(clickedTome);
-      if (!openedTome) {
-        console.error("Failed to open tome:", clickedTome.name);
-        return;
-      }
       const tomeEntries = entries as Entry[];
        setEntries(tomeEntries);
     } else {
@@ -139,22 +187,30 @@ function App() {
   };
 
   // open an entry
-  const handleEntryClick = async (entry: Entry) => {
-     setEntry(entry);
-    await SelectEntry(entry, tome as Tome);
-    setMarkdown((await GetEntryContent(entry)) ?? "");
+  const handleEntryClick = async (e: Entry) => {
+    
+    setEntry(e);
+    handleCreateTab(e);
+    setMarkdown(e.content ?? "");
   };
 
   // save the entry when the user presses Ctrl+S
   const handleSave = async () => {
-      let result = await entrySave(entry as Entry);
+      if (!entry) return;
+      // Ensure entry timestamp is fresh so saveEntry persists the new content
+      entry.updated_at = new Date().toISOString();
+      let result = await saveEntry(entry as Entry);
       if (result) {
         // If the entry was saved successfully, remove it from dirty entries
         setDirtyEntries(dirtyEntries.filter(e => e.id !== (entry as Entry).id));
-        console.log("Entry saved successfully");
+        console.log(`Entry ${entry?.name} saved successfully`);
+        console.log("DirtyEntries:")
+        for (var e of dirtyEntries) {
+          console.log(`Entry: ${e.name}`);
+        }
       } else {
         // If the save failed, log an error
-        console.error("Failed to save entry");
+        console.error("Failed to save entry ", entry?.name);
       }
   };
 
@@ -162,42 +218,59 @@ function App() {
     setDirtyEntries(await saveAllEntries(dirtyEntries as Entry[]));
   };
 
+  const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const handleEntryChanged = async (content: string) => {
-    // update markdown shown in preview
-    setMarkdown(content);
+     // update markdown shown in preview
+     setMarkdown(content);
 
-    // mark entry dirty for save-all logic
-    if (entry) {
-      // keep entry object in sync with text so Save uses the latest content
-      entry.content = content;
+     if (!entry) return;
 
-      if (!dirtyEntries.includes(entry)) {
-        setDirtyEntries(await MarkEntryDirty(entry, dirtyEntries as Entry[]));
-      }
-    }
-  };
+     // update entry object
+     entry.content = content;
+     entry.updated_at = new Date().toISOString();
+
+     // add to dirty list if not present
+     setDirtyEntries(prev => {
+       if (prev.some(e => e.id === entry.id)) return prev;
+       return [...prev, entry];
+     });
+
+     // debounce save
+     if (saveTimeout.current) {
+       clearTimeout(saveTimeout.current);
+     }
+     saveTimeout.current = setTimeout(async () => {
+       await saveLocalEntry(entry);
+       setDirtyEntries(prev => prev.filter(e => e.id !== entry.id));
+     }, 1000); // save 1s after typing stops
+   };
 
   //------ CREATE NEW TOME/ENTRY ------
 
   const handleNewTome = async (newTomeName: string) => {
     if (archive && !tomes.some(tome => tome.name === newTomeName)) {
-      const newTome = await NewTome(archive as Archive, newTomeName);
+      const newTome = await CreateTome(archive as Archive, newTomeName);
        setTomes([...tomes, newTome]);
        setTome(newTome);
       // Automatically create a default entry in the new tome
-      const defaultEntry = await NewEntry(newTome, "Untitled Entry");
-       setEntries([defaultEntry]);
-       setEntry(defaultEntry);
-      setMarkdown(await GetEntryContent(defaultEntry) || "");
+      const defaultEntry = await CreateEntry(newTome, "Untitled Entry");
+      setEntries([defaultEntry]);
+      setEntry(defaultEntry);
+      setTabbedEntries([...tabbedEntries, defaultEntry]);
+      setActiveTabId(defaultEntry.id)
+      setMarkdown(defaultEntry.content || "");
     }
   };
 
   const handleNewEntry = async (newEntryName: string) => {
-    if (tome && !entries.some(entry => entry.name === newEntryName)) {
-      const newEntry = await NewEntry(tome as Tome, newEntryName);
+    //
+    if (tome && !entries.some(e => e.name === newEntryName)) {
+      const newEntry = await CreateEntry(tome, newEntryName);
        setEntries([...entries, newEntry]);
        setEntry(newEntry);
-      setMarkdown(await GetEntryContent(newEntry) || "");
+       handleCreateTab(newEntry);
+      setMarkdown(newEntry.content || "");
       handleShowEntryPrompt(false);
     }
   };
@@ -214,12 +287,34 @@ function App() {
     console.log("Preferences dialog not implemented yet.");
   };
 
+  const togglePanels = () => {
+    setPanelsVisible(prev => !prev);
+  };
+
   const handleShowEntryPrompt = (show: boolean) => {
     setShowEntryPrompt(show);
   }
 
   const handleShowTomePrompt = (show: boolean) => {
     setShowTomePrompt(show);
+  };
+
+  const handleRenameEntry = async (entry: Entry) => {
+    const newName = prompt("New entry name", entry.name);
+    if (!newName || newName === entry.name) return;
+    entry.name = newName;
+    entry.updated_at = new Date().toISOString();
+    await saveEntry(entry);
+    setEntries([...entries]);          // refresh list
+  };
+
+  const handleDeleteEntry = async (entry: Entry) => {
+    if (confirm(`Delete "${entry.name}"?`)) {
+      await saveEntry(entry); // Assuming deleteEntry is a function that saves the updated entry
+      setEntries(entries.filter((e) => e.id !== entry.id));
+      setTabbedEntries(tabbedEntries.filter((e) => e.id !== entry.id));
+      if (activeTabId === entry.id) setActiveTabId(null);
+    }
   };
 
   // Handle entry saving via keyboard shortcut
@@ -281,25 +376,48 @@ function App() {
           console.error('❌ Failed to query tables:', tableError);
         }
         
-        // Optionally sync from server on startup
-        try {
-          await getSyncManager()?.syncFromAzure();
-          console.log("✅ Initial sync from server completed");
-        } catch (syncError) {
-          console.log("⚠️ Server sync failed (this is OK if offline):", syncError);
+        // Initialize sync manager and wait for it to be ready
+        const syncManager = getSyncManager();
+        if (syncManager) {
+          // Subscribe to sync status changes
+          const unsubscribe = syncManager.onStatusChange(setSyncStatus);
+          
+          // Wait for initialization to complete
+          await syncManager.waitForInitialization();
+          
+          // Cleanup subscription when component unmounts
+          return () => unsubscribe();
+        } else {
+          // If no sync manager, mark as ready for offline usage
+          setSyncStatus({
+            isInitializing: false,
+            isSyncing: false,
+            isReady: true,
+            error: null
+          });
         }
+        
       } catch (error) {
         console.error("❌ Failed to initialize app:", error);
         console.error("🔧 Check console for Tauri migration logs");
         // Reset flag on error so retry is possible
         isInitialized.current = false;
+        setSyncStatus({
+          isInitializing: false,
+          isSyncing: false,
+          isReady: true,
+          error: error instanceof Error ? error.message : 'Initialization failed'
+        });
       }
     };
     initializeApp();
   }, []);
 
+  // Fetch archives only after sync is ready
   useEffect(() => {
     const fetchArchives = async () => {
+      if (!syncStatus.isReady) return;
+      
       try {
         const fetchedArchives = await GetArchives();
         setArchives(fetchedArchives);
@@ -309,7 +427,7 @@ function App() {
     };
 
     fetchArchives();
-  }, []);
+  }, [syncStatus.isReady]);
 
 
   useEffect(() => {
@@ -340,7 +458,15 @@ function App() {
     {ShowTomePrompt && <NamePrompt title="New Tome" label="Tome Name" placeholder="Enter a name for the new tome" onClose={handleShowTomePrompt} onConfirm={(name: string) => {handleNewTome(name); handleShowTomePrompt(false)}} />}
 
     {/* START WINDOW */}
-    <StartWindow archives={archives} onArchiveClick={handleArchiveOpen} onCreateArchive={handleArchiveCreate} />
+    <StartWindow 
+      archives={archives} 
+      onArchiveClick={handleArchiveOpen} 
+      onCreateArchive={handleArchiveCreate}
+      syncStatus={syncStatus}
+    />
+
+    {/* TITLE BAR */}
+    <TitleBar />
 
     {/* MENU BAR */}
     <div className="menubar">
@@ -352,30 +478,80 @@ function App() {
         onClose={handleClose}
         onPreferences={handlePreferences}
       />
+      <NavIconButton
+        icon={panelsVisible ? <ChevronLeftIcon /> : <ChevronRightIcon />}
+        onClick={togglePanels}
+      />
     </div>
 
     {/* APP */}
     <div className="app">
       
       {/* LEFT PANEL */}
-      <div className="side-panel" style={{ width: leftWidth }}>
-        {/* TODO: right-click context menu for tomes */}
-        {archive && <div className="tree-view"><ArchiveTree archive={archive} tomes={tomes} onTomeClick={(tome: Tome, entries: Entry[]) => {handleTomeClick(tome, entries)}}/></div>}
-        <div className="panel-nav">
-          <NavIconButton icon={<GearIcon/>} onClick={handlePreferences} />
-          <NavIconButton icon={<FilePlusIcon/>} onClick={() => handleShowEntryPrompt(true)} />
+      {panelsVisible && (
+        <div className="side-panel" style={{ width: leftWidth }}>
+          {/* TODO: right-click context menu for tomes */}
+          {archive && (
+            <div className="tree-view">
+              <ArchiveTree
+                archive={archive}
+                tomes={tomes}
+                onTomeClick={(t: Tome, es: Entry[]) => {
+                  handleTomeClick(t, es);
+                }}
+              />
+            </div>
+          )}
+          <div className="panel-nav">
+            <NavIconButton icon={<GearIcon />} onClick={handlePreferences} />
+            <NavIconButton icon={<FilePlusIcon />} onClick={() => handleShowEntryPrompt(true)} />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ENTRY VIEW */}
-      {tome && <div className="entry-view-panel"><EntryView entries={entries} onEntryClick={(entry: Entry) => {handleEntryClick(entry)}} /></div>}
+      {panelsVisible && tome && (
+        <div className="entry-view-panel">
+          <EntryView 
+            entries={entries} 
+            onEntryClick={handleEntryClick} 
+            onRenameEntry={handleRenameEntry}
+            onDeleteEntry={handleDeleteEntry}
+          />
+        </div>
+      )}
 
       {/* EDITOR */}
       <div id="editor-container" 
         className="panel" 
         style={{ flex: 1 }}
       >
-        <MdEditor value={markdown} onEntryChange={(content: string) => {handleEntryChanged(content)}} />
+        <TabBar 
+          tabs={tabbedEntries}
+          activeTabId={activeTabId}
+          dirtyIds={dirtyEntries.map(e => e.id)}
+          onSelect={handleTabSelect}
+          onClose={handleTabClose}
+          onReorder={handleTabReorder}
+        />
+        {activeTabId ? (
+          tabbedEntries
+            .filter(e => e.id === activeTabId)
+            .map(e => (
+              <MdEditor
+                key={e.id}
+                value={markdown}
+                onEntryChange={(content: string) => {
+                  handleEntryChanged(content);
+                }}
+              />
+            ))
+        ) : (
+          <div className="editor-placeholder">
+            <img className="logo-placeholder" src={logo} alt="StackScribe logo" width={120} height={120} />
+            <p>Select a tome and entry to start writing</p>
+          </div>
+        )}
       </div>
 
       {/* DIVIDER */}
@@ -389,7 +565,7 @@ function App() {
       <div
         id="preview-container"
         className="panel"
-        style={{ width: rightWidth, overflow: "auto", padding: "1rem" }}
+        style={{ width: rightWidth, overflow: "auto" }}
       >
         <PreviewPanel markdown={markdown} />
       

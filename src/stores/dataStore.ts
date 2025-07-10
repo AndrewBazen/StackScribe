@@ -36,12 +36,6 @@ export const saveArchive = async (archive: Archive): Promise<void> => {
             `INSERT OR REPLACE INTO archives (id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
             [archive.id, archive.name, archive.description || null, archive.created_at, archive.updated_at]
         );
-        for (const tome of archive.tomes || []) {
-            if (tome) await saveTome(tome);
-            for (const entry of tome.entries || []) {
-                if (entry) await saveEntry(entry);
-            }
-        }
     } else {
         console.warn(`⏩ Skipping archive ${archive.name} - local is newer than remote.`);
     }
@@ -123,8 +117,11 @@ export const saveEntry = async (entry: Entry): Promise<QueryResult> => {
             `INSERT OR REPLACE INTO entries (id, tome_id, name, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
             [entry.id, entry.tome_id, entry.name, entry.content, entry.created_at, entry.updated_at]
         );
+    } else if (new Date(existing.updated_at) > new Date(entry.updated_at)) {
+        console.warn(`⏩ Skipping entry ${entry.name} - remote is newer than local.`);
+        return { rowsAffected: 0, lastInsertId: undefined };
     } else {
-        console.warn(`⏩ Skipping entry ${entry.name} - remote is newer than remote.`);
+        console.warn(`⏩ Skipping entry ${entry.name} - local and remote are the same.`);
         return { rowsAffected: 0, lastInsertId: undefined };
     }
 };

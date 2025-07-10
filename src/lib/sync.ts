@@ -4,10 +4,19 @@ import { Archive } from '../types/archive';
 import { Tome } from '../types/tome';
 import { Entry } from '../types/entry';
 
+export interface SyncStatus {
+  isInitializing: boolean;
+  isSyncing: boolean;
+  isReady: boolean;
+  error: string | null;
+}
+
 export interface SyncManager {
   syncToAzure(): Promise<void>;
   syncFromAzure(): Promise<void>;
   fullSync(): Promise<void>;
+  getSyncStatus(): SyncStatus;
+  waitForInitialization(): Promise<void>;
 }
 
 export class AzureSyncManager implements SyncManager {
@@ -16,6 +25,11 @@ export class AzureSyncManager implements SyncManager {
   private azureFunctionUrl: string;
   private isSyncing: boolean = false;
   private syncPromise: Promise<void> | null = null;
+  private isInitializing: boolean = false;
+  private isReady: boolean = false;
+  private error: string | null = null;
+  private initializationPromise: Promise<void> | null = null;
+  private statusChangeCallbacks: ((status: SyncStatus) => void)[] = [];
 
   constructor(msalInstance: any, account: any) {
     this.msalInstance = msalInstance;
@@ -23,6 +37,68 @@ export class AzureSyncManager implements SyncManager {
     // Update this URL to match your deployed Azure Function
     this.azureFunctionUrl = import.meta.env.VITE_AZURE_FUNCTION_URL;
     console.log('🔗 Azure Function URL:', this.azureFunctionUrl);
+  }
+
+  public getSyncStatus(): SyncStatus {
+    return {
+      isInitializing: this.isInitializing,
+      isSyncing: this.isSyncing,
+      isReady: this.isReady,
+      error: this.error
+    };
+  }
+
+  public onStatusChange(callback: (status: SyncStatus) => void): () => void {
+    this.statusChangeCallbacks.push(callback);
+    // Return unsubscribe function
+    return () => {
+      const index = this.statusChangeCallbacks.indexOf(callback);
+      if (index > -1) {
+        this.statusChangeCallbacks.splice(index, 1);
+      }
+    };
+  }
+
+  private notifyStatusChange() {
+    const status = this.getSyncStatus();
+    this.statusChangeCallbacks.forEach(callback => callback(status));
+  }
+
+  private setStatus(updates: Partial<{ isInitializing: boolean; isSyncing: boolean; isReady: boolean; error: string | null }>) {
+    if (updates.isInitializing !== undefined) this.isInitializing = updates.isInitializing;
+    if (updates.isSyncing !== undefined) this.isSyncing = updates.isSyncing;
+    if (updates.isReady !== undefined) this.isReady = updates.isReady;
+    if (updates.error !== undefined) this.error = updates.error;
+    this.notifyStatusChange();
+  }
+
+  public async waitForInitialization(): Promise<void> {
+    if (this.isReady) return;
+    if (this.initializationPromise) return this.initializationPromise;
+    
+    this.initializationPromise = this.performInitialSync();
+    return this.initializationPromise;
+  }
+
+  private async performInitialSync(): Promise<void> {
+    if (this.isReady) return;
+    
+    this.setStatus({ isInitializing: true, error: null });
+    
+    try {
+      console.log('🔄 Starting initial sync from Azure...');
+      await this.syncFromAzure();
+      this.setStatus({ isInitializing: false, isReady: true });
+      console.log('✅ Initial sync completed successfully');
+    } catch (error) {
+      console.log('⚠️ Initial sync failed (this is OK if offline):', error);
+      // Don't block the app if sync fails - allow offline usage
+      this.setStatus({ 
+        isInitializing: false, 
+        isReady: true, 
+        error: error instanceof Error ? error.message : 'Initial sync failed'
+      });
+    }
   }
 
   private getUserId(): string {
@@ -94,6 +170,8 @@ export class AzureSyncManager implements SyncManager {
       console.warn('⚠️ Full sync in progress, skipping individual syncFromAzure');
       return;
     }
+
+    this.setStatus({ isSyncing: true, error: null });
 
     try {
       console.log('🔄 Starting sync from Azure...');
@@ -263,7 +341,10 @@ export class AzureSyncManager implements SyncManager {
       }
     } catch (error) {
       console.error('❌ Sync from Azure failed:', error);
+      this.setStatus({ isSyncing: false, error: error instanceof Error ? error.message : 'Sync failed' });
       throw error;
+    } finally {
+      this.setStatus({ isSyncing: false });
     }
   }
 
@@ -289,6 +370,8 @@ export class AzureSyncManager implements SyncManager {
   }
 
   private async _performFullSync(): Promise<void> {
+    this.setStatus({ isSyncing: true, error: null });
+    
     try {
       console.log('🔄 Starting full sync...');
       
@@ -301,7 +384,10 @@ export class AzureSyncManager implements SyncManager {
       console.log('✅ Full sync completed successfully');
     } catch (error) {
       console.error('❌ Full sync failed:', error);
+      this.setStatus({ error: error instanceof Error ? error.message : 'Full sync failed' });
       throw error;
+    } finally {
+      this.setStatus({ isSyncing: false });
     }
   }
 }

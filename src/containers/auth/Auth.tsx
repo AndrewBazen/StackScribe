@@ -71,18 +71,6 @@ const Auth: React.FC = () => {
     <>
       <AuthenticatedTemplate>
         <div>
-          <div style={{ position: 'absolute', top: '10px', right: '10px', zIndex: 1000 }}>
-            <button onClick={handleLogout} style={{ 
-              padding: '8px 16px', 
-              backgroundColor: '#dc3545', 
-              color: 'white', 
-              border: 'none', 
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}>
-              Logout
-            </button>
-          </div>
           <App />
         </div>
       </AuthenticatedTemplate>
