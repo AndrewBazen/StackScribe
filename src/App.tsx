@@ -10,23 +10,21 @@ import StartWindow from "./components/StartWindow";
 import { Archive } from "./types/archive";
 import { FilePlusIcon, GearIcon, ChevronLeftIcon, ChevronRightIcon } from "@radix-ui/react-icons";
 import { AppMenuBar } from "./components/AppMenuBar";
-import Stack, { IStack } from "./types/stack";
 import { 
    CreateTome, CreateEntry, saveLocalEntry, saveAllEntries, exitApp,
-   SaveShortcut, MarkEntryDirty,
+   SaveShortcut,
    OpenArchive, CreateArchive,
-   GetArchives, GetEntryContent, OpenTome,
-   getLastOpenedTome, getLastOpenedEntry,
+   GetArchives,
    } from "./Utils/AppUtils";
 import PreviewPanel from "./components/PreviewPanel";
 import NamePrompt from "./components/NamePrompt";
 import { getSyncManager, SyncStatus } from "./lib/sync";
 import { getDb } from "./lib/db";
-import { getEntriesByTomeId, getTomesByArchiveId, saveEntry } from "./stores/dataStore";
+import { getTomesByArchiveId, saveEntry } from "./stores/dataStore";
 import TabBar from "./components/TabBar";
 import logo from "../src-tauri/icons/icon.png";
 import TitleBar from "./components/TitleBar";
-import * as ContextMenu from "@radix-ui/react-context-menu";
+import Preferences from "./components/Preferences";
 
 const DIVIDER_SIZE = 2; // px
 
@@ -55,7 +53,10 @@ function App() {
     isReady: false,
     error: null
   });
-  
+  const [preview, setPreview] = useState<boolean>(false);
+  const [themes, setThemes] = useState<{ [key: string]: string }>({});
+  const [plugins, setPlugins] = useState<{ [key: string]: string }>({});
+  const [showPreferences, setShowPreferences] = useState<boolean>(false);
   // Track initialization to prevent multiple sync operations
   const isInitialized = useRef<boolean>(false);
 
@@ -282,10 +283,29 @@ function App() {
   };
 
   // Handle preferences dialog
-  const handlePreferences = async () => {
-    // TODO: Implement preferences dialog
-    console.log("Preferences dialog not implemented yet.");
+  const togglePreferences = () => {
+    setShowPreferences(!showPreferences);
   };
+
+  const handlePreferencesApply = (themes: { [key: string]: string }, plugins: { [key: string]: string }) => {
+    console.log("Preferences applied:", themes, plugins);
+  }
+
+  const handlePreferencesClose = () => {
+    setShowPreferences(false);
+  }
+
+  const handleTogglePreview = (preview: boolean) => {
+    setPreview(preview);
+  }
+
+  const handleTogglePlugin = (plugin: string, checked: boolean) => {
+    console.log("Toggle plugin:", plugin, checked);
+  }
+
+  const handleSelectTheme = (theme: string) => {
+    console.log("Select theme:", theme);
+  }
 
   const togglePanels = () => {
     setPanelsVisible(prev => !prev);
@@ -453,6 +473,17 @@ function App() {
     {/* Initialize the app on first load */}
     {/* This will set up the database and sync data from the server */}
 
+    {/* PREFERENCES */}
+    {showPreferences && <Preferences 
+      themes={themes}
+      plugins={plugins}
+      onApply={handlePreferencesApply}
+      onClose={handlePreferencesClose}
+      onTogglePreview={handleTogglePreview}
+      onTogglePlugin={handleTogglePlugin}
+      onSelectTheme={handleSelectTheme}
+    />}
+
     {/* NAME PROMPT */}
     {ShowEntryPrompt && <NamePrompt title="New Entry"  label="Entry Name" placeholder="Enter a name for the new entry" onClose={handleShowEntryPrompt} onConfirm={(name: string) => { handleNewEntry(name); handleShowEntryPrompt(false); }} />}
     {ShowTomePrompt && <NamePrompt title="New Tome" label="Tome Name" placeholder="Enter a name for the new tome" onClose={handleShowTomePrompt} onConfirm={(name: string) => {handleNewTome(name); handleShowTomePrompt(false)}} />}
@@ -476,7 +507,7 @@ function App() {
         onSave={handleSave}
         onSaveAll={handleSaveAll}
         onClose={handleClose}
-        onPreferences={handlePreferences}
+        onPreferences={togglePreferences}
       />
       <NavIconButton
         icon={panelsVisible ? <ChevronLeftIcon /> : <ChevronRightIcon />}
@@ -503,7 +534,7 @@ function App() {
             </div>
           )}
           <div className="panel-nav">
-            <NavIconButton icon={<GearIcon />} onClick={handlePreferences} />
+            <NavIconButton icon={<GearIcon />} onClick={togglePreferences} />
             <NavIconButton icon={<FilePlusIcon />} onClick={() => handleShowEntryPrompt(true)} />
           </div>
         </div>
