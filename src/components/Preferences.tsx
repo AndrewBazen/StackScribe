@@ -16,11 +16,12 @@ interface PreferenceProps {
     onTogglePreview: (preview: boolean) => void;
     onTogglePlugin: (plugin: string, checked: boolean) => void;
     onSelectTheme: (theme: string) => void;
+    onToggleAzureSync: (checked: boolean) => void;
 }
 
 
 export default function Preferences(props: PreferenceProps) {
-    const { themes, plugins, onApply, onClose, onTogglePreview, onTogglePlugin, onSelectTheme } = props;
+    const { themes, plugins, onApply, onClose, onTogglePreview, onTogglePlugin, onSelectTheme, onToggleAzureSync } = props;
     const [isOpen, setIsOpen] = useState(true);
     const handleSelectTheme = (value: string) => {
         onSelectTheme(value);
@@ -143,6 +144,15 @@ export default function Preferences(props: PreferenceProps) {
                     <form className="tab-form">
                         <ScrollArea.Root className="scroll-area-root" style={{ height: "100px" }}>
                             <div style={{ display: "flex", alignItems: "center", flexDirection: "column", gap: "10px" }}>
+                                {/* Azure Sync toggle */}
+                                <div style={{ display: "flex", alignItems: "center", gap: "10px", width: "100%" }}>
+                                    <label className="label" htmlFor="enable-azure-sync">
+                                        Enable Azure Sync
+                                    </label>
+                                    <Switch.Root className="switch-root" id="enable-azure-sync" onCheckedChange={onToggleAzureSync}>
+                                        <Switch.Thumb className="switch-thumb" />
+                                    </Switch.Root>
+                                </div>
                             </div>
                         </ScrollArea.Root>
                     </form>

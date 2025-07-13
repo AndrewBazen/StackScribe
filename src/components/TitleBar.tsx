@@ -12,9 +12,26 @@
          </div>
 
          <div className="titlebar-buttons">
-           <button onClick={() => appWindow.minimize()}   title="Minimise"> — </button>
-           <button onClick={() => appWindow.toggleMaximize()} title="Max/Restore"> ☐ </button>
-           <button onClick={() => appWindow.close()}      title="Close"> ✕ </button>
+          <div className="titlebar-button-container" data-tauri-drag-region="false">
+            <button onClick={() => appWindow.minimize()}   title="Minimise"> — </button>
+          </div>
+          <div className="titlebar-button-container" data-tauri-drag-region="false">
+            <button  onClick={async () => {
+              try {
+                const isMaximized = await appWindow.isMaximized();
+                if (isMaximized) {
+                  await appWindow.unmaximize();
+                } else {
+                  await appWindow.maximize();
+                }
+              } catch (error) {
+                console.error('Error toggling maximize:', error);
+              }
+            }} title="Max/Restore"> ☐ </button>
+          </div>
+          <div className="titlebar-button-container" data-tauri-drag-region="false">
+            <button onClick={() => appWindow.close()}      title="Close"> ✕ </button>
+          </div>
          </div>
        </div>
      );

@@ -4,17 +4,41 @@
      display:flex;
      justify-content:space-between;
      align-items:center;
-     padding:0 8px;
+     padding-left:8px;
      background:#151515;            /* your dark theme */
-     border-bottom:1px solid #50EFB8;/* accent line */
      user-select:none;
    }
    .titlebar-left{display:flex;gap:8px;align-items:center;color:#fff;font-size:13px;}
-   .titlebar-buttons button{
-     width:34px;height:100%;
-     border:none;background:transparent;color:#fff;font-size:13px;
+
+   .titlebar-buttons {
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-end;
+    align-items: flex-end;
    }
-   .titlebar-buttons button:hover{background:#2a2a2a;}
-   .titlebar-buttons button:last-child:hover{background:#e53935;color:#000;}
+
+  /* Titlebar window control buttons */
+.titlebar-button-container {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.titlebar-button-container button {
+    padding: 0;       /* remove default button padding */
+    display: flex;    /* center glyph */
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    color: #fff;
+    font-size: 14px;  /* glyph size */
+    line-height: 1;
+    cursor: pointer;
+}
+/* hover states */
+.titlebar-button-container:hover{background:#2a2a2a;color:#fff;border:none;cursor:pointer;}
+.titlebar-button-container:last-child:hover{background:#e53935;color:#000;border:none;cursor:pointer;}
 
 

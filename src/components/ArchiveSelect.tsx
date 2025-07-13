@@ -81,7 +81,7 @@ const CreateArchiveDialog = (props: {
                                 required 
                                 minLength={1} 
                                 maxLength={255} 
-                                pattern="^[a-zA-Z0-9]+$" 
+                                pattern="^[a-zA-Z0-9 ]+$" 
                                 title="Name must be alphanumeric"
                                 disabled={!syncStatus.isReady}
                             />
@@ -96,7 +96,7 @@ const CreateArchiveDialog = (props: {
                                 required 
                                 minLength={1} 
                                 maxLength={255} 
-                                pattern="^[a-zA-Z0-9]+$" 
+                                pattern="^[a-zA-Z0-9 ]+$" 
                                 title="Name must be alphanumeric"
                                 disabled={!syncStatus.isReady}
                             />

@@ -15,8 +15,7 @@
         "title": "StackScribe",
         "width": 1600,
         "height": 900,
-        "maximized": true,
-        "decorations": false
+        "decorations": true
       }
     ],
     "security": {

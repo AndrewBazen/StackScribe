@@ -10,6 +10,7 @@ import StartWindow from "./components/StartWindow";
 import { Archive } from "./types/archive";
 import { FilePlusIcon, GearIcon, ChevronLeftIcon, ChevronRightIcon } from "@radix-ui/react-icons";
 import { AppMenuBar } from "./components/AppMenuBar";
+import CustomHeaderBar from "./components/CustomHeaderBar";
 import { 
    CreateTome, CreateEntry, saveLocalEntry, saveAllEntries, exitApp,
    SaveShortcut,
@@ -20,11 +21,12 @@ import PreviewPanel from "./components/PreviewPanel";
 import NamePrompt from "./components/NamePrompt";
 import { getSyncManager, SyncStatus } from "./lib/sync";
 import { getDb } from "./lib/db";
-import { getTomesByArchiveId, saveEntry } from "./stores/dataStore";
+import { getTomesByArchiveId, saveEntry, getEntriesByTomeId } from "./stores/dataStore";
 import TabBar from "./components/TabBar";
 import logo from "../src-tauri/icons/icon.png";
-import TitleBar from "./components/TitleBar";
 import Preferences from "./components/Preferences";
+import AILinkSuggestions from "./components/AILinkSuggestions";
+import { aiLinkService, LinkSuggestion } from "./services/aiLinkService";
 
 const DIVIDER_SIZE = 2; // px
 
@@ -57,6 +59,15 @@ function App() {
   const [themes, setThemes] = useState<{ [key: string]: string }>({});
   const [plugins, setPlugins] = useState<{ [key: string]: string }>({});
   const [showPreferences, setShowPreferences] = useState<boolean>(false);
+  // Azure Sync preference (persisted in localStorage)
+  const [enableAzureSync, setEnableAzureSync] = useState<boolean>(() => {
+    const stored = localStorage.getItem('enableAzureSync');
+    return stored ? JSON.parse(stored) : false;
+  });
+  // AI Link suggestions state
+  const [aiSuggestions, setAiSuggestions] = useState<LinkSuggestion[]>([]);
+  const [isLoadingAI, setIsLoadingAI] = useState<boolean>(false);
+  const [showAISuggestions, setShowAISuggestions] = useState<boolean>(false);
   // Track initialization to prevent multiple sync operations
   const isInitialized = useRef<boolean>(false);
 
@@ -115,7 +126,8 @@ function App() {
     setEntry(createdEntry);
     setTabbedEntries([...tabbedEntries, createdEntry]);
     handleCreateTab(createdEntry);
-    setMarkdown(createdEntry.content) ?? "";
+    // Ensure markdown state is set correctly
+    setMarkdown(createdEntry.content || "");
   };
 
   const handleCreateTab = (entry: Entry) => {
@@ -303,12 +315,103 @@ function App() {
     console.log("Toggle plugin:", plugin, checked);
   }
 
+  // Toggle Azure Sync preference
+  const handleToggleAzureSync = (checked: boolean) => {
+    setEnableAzureSync(checked);
+    localStorage.setItem('enableAzureSync', JSON.stringify(checked));
+    // Reload to allow Auth component to pick up the new preference
+    window.location.reload();
+  }
+
   const handleSelectTheme = (theme: string) => {
     console.log("Select theme:", theme);
   }
 
   const togglePanels = () => {
     setPanelsVisible(prev => !prev);
+  };
+
+  const handleSearch = (query: string) => {
+    console.log("Search query:", query);
+    // TODO: Implement search functionality
+    // This could search through entries, tomes, and archives
+  };
+
+  // AI Link Suggestions Functions
+  const generateAISuggestions = async () => {
+    if (!entry || !tome) return;
+    
+    setIsLoadingAI(true);
+    setShowAISuggestions(true);
+    
+    try {
+      // Get all entries from the current tome to provide context
+      const allEntries = await getEntriesByTomeId(tome.id);
+      
+      const response = await aiLinkService.getSuggestions({
+        currentEntry: entry,
+        allEntries: allEntries,
+        context: {
+          archiveId: archive?.id,
+          tomeId: tome.id,
+        },
+      });
+      
+      if (response.status === 'success') {
+        setAiSuggestions(response.suggestions);
+      } else {
+        console.error('AI suggestions failed:', response.error);
+        setAiSuggestions([]);
+      }
+    } catch (error) {
+      console.error('Error generating AI suggestions:', error);
+      setAiSuggestions([]);
+    } finally {
+      setIsLoadingAI(false);
+    }
+  };
+
+  const handleApplyAISuggestion = (suggestion: LinkSuggestion) => {
+    if (!entry) return;
+    
+    // Apply the suggestion to the current entry content
+    const linkText = suggestion.suggestedText || suggestion.targetEntryName;
+    const linkMarkdown = `[${linkText}](entry://${suggestion.targetEntryId})`;
+    
+    // If position is specified, insert at that position
+    if (suggestion.position) {
+      const content = entry.content;
+      const newContent = 
+        content.slice(0, suggestion.position.start) +
+        linkMarkdown +
+        content.slice(suggestion.position.end);
+      
+      setMarkdown(newContent);
+      handleEntryChanged(newContent);
+    } else {
+      // Append to the end of the content
+      const newContent = entry.content + '\n\n' + linkMarkdown;
+      setMarkdown(newContent);
+      handleEntryChanged(newContent);
+    }
+    
+    // Remove the applied suggestion
+    setAiSuggestions(prev => 
+      prev.filter(s => s.targetEntryId !== suggestion.targetEntryId)
+    );
+  };
+
+  const handleDismissAISuggestion = (suggestion: LinkSuggestion) => {
+    setAiSuggestions(prev => 
+      prev.filter(s => s.targetEntryId !== suggestion.targetEntryId)
+    );
+  };
+
+  const toggleAISuggestions = () => {
+    setShowAISuggestions(!showAISuggestions);
+    if (!showAISuggestions && aiSuggestions.length === 0) {
+      generateAISuggestions();
+    }
   };
 
   const handleShowEntryPrompt = (show: boolean) => {
@@ -482,6 +585,7 @@ function App() {
       onTogglePreview={handleTogglePreview}
       onTogglePlugin={handleTogglePlugin}
       onSelectTheme={handleSelectTheme}
+      onToggleAzureSync={handleToggleAzureSync}
     />}
 
     {/* NAME PROMPT */}
@@ -496,24 +600,20 @@ function App() {
       syncStatus={syncStatus}
     />
 
-    {/* TITLE BAR */}
-    <TitleBar />
-
-    {/* MENU BAR */}
-    <div className="menubar">
-      <AppMenuBar
-        onNewEntry={() => handleShowEntryPrompt(true)}
-        onNewTome={() => handleShowTomePrompt(true)}
-        onSave={handleSave}
-        onSaveAll={handleSaveAll}
-        onClose={handleClose}
-        onPreferences={togglePreferences}
-      />
-      <NavIconButton
-        icon={panelsVisible ? <ChevronLeftIcon /> : <ChevronRightIcon />}
-        onClick={togglePanels}
-      />
-    </div>
+    {/* CUSTOM HEADER BAR */}
+    <CustomHeaderBar
+      onNewEntry={() => handleShowEntryPrompt(true)}
+      onNewTome={() => handleShowTomePrompt(true)}
+      onSave={handleSave}
+      onSaveAll={handleSaveAll}
+      onClose={handleClose}
+      onPreferences={togglePreferences}
+      onSearch={handleSearch}
+      panelsVisible={panelsVisible}
+      onTogglePanels={togglePanels}
+      onToggleAI={toggleAISuggestions}
+      aiActive={showAISuggestions}
+    />
 
     {/* APP */}
     <div className="app">
@@ -596,8 +696,17 @@ function App() {
       <div
         id="preview-container"
         className="panel"
-        style={{ width: rightWidth, overflow: "auto" }}
+        style={{ width: rightWidth, overflow: "auto", padding: "0px"}}
       >
+        {showAISuggestions && (
+          <AILinkSuggestions
+            suggestions={aiSuggestions}
+            isLoading={isLoadingAI}
+            onApplySuggestion={handleApplyAISuggestion}
+            onDismissSuggestion={handleDismissAISuggestion}
+            onRefreshSuggestions={generateAISuggestions}
+          />
+        )}
         <PreviewPanel markdown={markdown} />
       
       </div>

@@ -43,8 +43,8 @@ export default function NamePrompt({ title, label, placeholder, onConfirm, onClo
                     required
                     minLength={1}
                     maxLength={255}
-                    pattern="^[a-zA-Z0-9]+$"
-                    title="Name must be alphanumeric"
+                    pattern="^[a-zA-Z0-9 ]+$"
+                    title="Name can contain letters, numbers, and spaces"
                     placeholder={placeholder}
                     autoFocus
                         />
