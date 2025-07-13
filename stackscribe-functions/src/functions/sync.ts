@@ -153,27 +153,105 @@ async function handleSyncUpload(
     connection = await createConnection();
     context.info('✅ Database connection established');
     
-    // Use transaction for data consistency
-    await executeQuery(connection, "BEGIN TRANSACTION");
-    context.info('📊 Transaction started');
-    
-    // Sync archives
-    if (archives?.length > 0) {
-      await syncArchives(connection, archives, userId, context);
-    }
-    
-    // Sync tomes
-    if (tomes?.length > 0) {
-      await syncTomes(connection, tomes, userId, context);
-    }
-    
-    // Sync entries
-    if (entries?.length > 0) {
-      await syncEntries(connection, entries, userId, context);
-    }
-    
-    await executeQuery(connection, "COMMIT TRANSACTION");
-    context.info('✅ Transaction committed successfully');
+    // Bulk merge all data in one batch for consistency and performance
+    const batchSql = `
+      SET XACT_ABORT ON;
+      BEGIN TRANSACTION;
+
+      /* ---------- ARCHIVES ---------- */
+      MERGE archives AS target
+      USING (
+        SELECT id,
+               name,
+               description,
+               created_at,
+               updated_at,
+               @userId AS user_id
+        FROM OPENJSON(@archivesJson)
+        WITH (
+          id           NVARCHAR(50)  '$.id',
+          name         NVARCHAR(255) '$.name',
+          description  NVARCHAR(MAX) '$.description',
+          created_at   NVARCHAR(50)  '$.created_at',
+          updated_at   NVARCHAR(50)  '$.updated_at'
+        )
+      ) AS source
+      ON target.id = source.id AND target.user_id = source.user_id
+      WHEN MATCHED THEN UPDATE
+        SET name        = source.name,
+            description = source.description,
+            updated_at  = source.updated_at
+      WHEN NOT MATCHED THEN INSERT (id, name, description, created_at, updated_at, user_id)
+        VALUES (source.id, source.name, source.description, source.created_at, source.updated_at, source.user_id);
+
+      /* ---------- TOMES ---------- */
+      MERGE tomes AS target
+      USING (
+        SELECT id,
+               archive_id,
+               name,
+               description,
+               created_at,
+               updated_at,
+               @userId AS user_id
+        FROM OPENJSON(@tomesJson)
+        WITH (
+          id           NVARCHAR(50)  '$.id',
+          archive_id   NVARCHAR(50)  '$.archive_id',
+          name         NVARCHAR(255) '$.name',
+          description  NVARCHAR(MAX) '$.description',
+          created_at   NVARCHAR(50)  '$.created_at',
+          updated_at   NVARCHAR(50)  '$.updated_at'
+        )
+      ) AS source
+      ON target.id = source.id AND target.user_id = source.user_id
+      WHEN MATCHED THEN UPDATE
+        SET archive_id  = source.archive_id,
+            name        = source.name,
+            description = source.description,
+            updated_at  = source.updated_at
+      WHEN NOT MATCHED THEN INSERT (id, archive_id, name, description, created_at, updated_at, user_id)
+        VALUES (source.id, source.archive_id, source.name, source.description, source.created_at, source.updated_at, source.user_id);
+
+      /* ---------- ENTRIES ---------- */
+      MERGE entries AS target
+      USING (
+        SELECT id,
+               tome_id,
+               name,
+               content,
+               created_at,
+               updated_at,
+               @userId AS user_id
+        FROM OPENJSON(@entriesJson)
+        WITH (
+          id           NVARCHAR(50)  '$.id',
+          tome_id      NVARCHAR(50)  '$.tome_id',
+          name         NVARCHAR(255) '$.name',
+          content      NVARCHAR(MAX) '$.content',
+          created_at   NVARCHAR(50)  '$.created_at',
+          updated_at   NVARCHAR(50)  '$.updated_at'
+        )
+      ) AS source
+      ON target.id = source.id AND target.user_id = source.user_id
+      WHEN MATCHED THEN UPDATE
+        SET tome_id    = source.tome_id,
+            name       = source.name,
+            content    = source.content,
+            updated_at = source.updated_at
+      WHEN NOT MATCHED THEN INSERT (id, tome_id, name, content, created_at, updated_at, user_id)
+        VALUES (source.id, source.tome_id, source.name, source.content, source.created_at, source.updated_at, source.user_id);
+
+      COMMIT TRANSACTION;`;
+
+    await executeQuery(connection, batchSql, {
+      archivesJson: JSON.stringify(archives || []),
+      tomesJson: JSON.stringify(tomes || []),
+      entriesJson: JSON.stringify(entries || []),
+      userId
+    });
+
+    context.info('✅ Bulk merge transaction committed successfully');
     
     return {
       status: 200,
@@ -353,85 +431,6 @@ async function createConnection(): Promise<Connection> {
   }
 }
 
-async function syncArchives(connection: Connection, archives: Archive[], userId: string, context: InvocationContext): Promise<void> {
-  const sql = `
-    MERGE archives AS target
-    USING (SELECT @id as id, @name as name, @description as description, @created_at as created_at, @updated_at as updated_at, @user_id as user_id) AS source
-    ON target.id = source.id AND target.user_id = source.user_id
-    WHEN MATCHED THEN 
-      UPDATE SET name = source.name, description = source.description, updated_at = source.updated_at
-    WHEN NOT MATCHED THEN
-      INSERT (id, name, description, created_at, updated_at, user_id)
-      VALUES (source.id, source.name, source.description, source.created_at, source.updated_at, source.user_id);
-  `;
-
-  for (const archive of archives) {
-    await executeQuery(connection, sql, {
-      id: archive.id,
-      name: archive.name,
-      description: archive.description || null,
-      created_at: archive.created_at,
-      updated_at: archive.updated_at,
-      user_id: userId
-    });
-  }
-  
-  context.info(`Synced ${archives.length} archives for user ${userId}`);
-}
-
-async function syncTomes(connection: Connection, tomes: Tome[], userId: string, context: InvocationContext): Promise<void> {
-  const sql = `
-    MERGE tomes AS target
-    USING (SELECT @id as id, @archive_id as archive_id, @name as name, @description as description, @created_at as created_at, @updated_at as updated_at, @user_id as user_id) AS source
-    ON target.id = source.id AND target.user_id = source.user_id
-    WHEN MATCHED THEN 
-      UPDATE SET archive_id = source.archive_id, name = source.name, description = source.description, updated_at = source.updated_at
-    WHEN NOT MATCHED THEN
-      INSERT (id, archive_id, name, description, created_at, updated_at, user_id)
-      VALUES (source.id, source.archive_id, source.name, source.description, source.created_at, source.updated_at, source.user_id);
-  `;
-
-  for (const tome of tomes) {
-    await executeQuery(connection, sql, {
-      id: tome.id,
-      archive_id: tome.archive_id,
-      name: tome.name,
-      description: tome.description || null,
-      created_at: tome.created_at,
-      updated_at: tome.updated_at,
-      user_id: userId
-    });
-  }
-  
-  context.info(`Synced ${tomes.length} tomes for user ${userId}`);
-}
-
-async function syncEntries(connection: Connection, entries: Entry[], userId: string, context: InvocationContext): Promise<void> {
-  const sql = `
-    MERGE entries AS target
-    USING (SELECT @id as id, @tome_id as tome_id, @name as name, @content as content, @created_at as created_at, @updated_at as updated_at, @user_id as user_id) AS source
-    ON target.id = source.id AND target.user_id = source.user_id
-    WHEN MATCHED THEN 
-      UPDATE SET tome_id = source.tome_id, name = source.name, content = source.content, updated_at = source.updated_at
-    WHEN NOT MATCHED THEN
-      INSERT (id, tome_id, name, content, created_at, updated_at, user_id)
-      VALUES (source.id, source.tome_id, source.name, source.content, source.created_at, source.updated_at, source.user_id);
-  `;
-
-  for (const entry of entries) {
-    await executeQuery(connection, sql, {
-      id: entry.id,
-      tome_id: entry.tome_id,
-      name: entry.name,
-      content: entry.content,
-      created_at: entry.created_at,
-      updated_at: entry.updated_at,
-      user_id: userId
-    });
-  }
-  
-  context.info(`Synced ${entries.length} entries for user ${userId}`);
-}
 
 async function executeQuery(connection: Connection, sql: string, parameters: Record<string, any> = {}): Promise<void> {
   return new Promise((resolve, reject) => {

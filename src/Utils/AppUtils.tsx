@@ -5,15 +5,15 @@ import { Archive } from "../types/archive";
 // import App from "../App"; // Removed because App is a React component, not a state container
 // Importing dataStore functions for database operations
 import { saveArchive,
-    getLastSyncedAt, getAllArchives, 
-    getArchiveById, saveTome, getTomesByArchiveId, 
-    getTomeById, saveEntry, getEntriesByTomeId, 
+    getAllArchives, 
+    getArchiveById, saveTome,
+    getTomeById, saveEntry, 
     getEntryById,
-    getUpdatedTomesSince, getUpdatedEntriesSince,
+    getSortedAndUpdated,
  } from "../stores/dataStore";
 
 
-async function NewTome(archive: Archive, name: string): Promise<Tome> {
+async function CreateTome(archive: Archive, name: string): Promise<Tome> {
     const tome: Tome = {
         id: crypto.randomUUID(),
         archive_id: archive.id,
@@ -21,14 +21,13 @@ async function NewTome(archive: Archive, name: string): Promise<Tome> {
         description: "",
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        entries: [], // Initialize with an empty array
     };
 
     await saveTome(tome);
     return tome;
 }
 
-async function NewEntry(tome: Tome, title: string): Promise<Entry> {
+async function CreateEntry(tome: Tome, title: string): Promise<Entry> {
     const entry: Entry = {
         id: crypto.randomUUID(),
         tome_id: tome.id,
@@ -42,7 +41,9 @@ async function NewEntry(tome: Tome, title: string): Promise<Entry> {
     return entry;
 }
 
-async function entrySave(entry: Entry) {
+async function saveLocalEntry(entry: Entry) {
+    // Refresh timestamp so database considers this a newer version
+    entry.updated_at = new Date().toISOString();
     let result = await saveEntry(entry);
     if (!result) {
         console.error(`Failed to save entry ${entry.id}`);
@@ -57,6 +58,7 @@ async function entrySave(entry: Entry) {
 async function saveAllEntries(entries: Entry[]) {
     let updatedEntries: Entry[] = [];
     for (const entry of entries) {
+        entry.updated_at = new Date().toISOString();
         let result = await saveEntry(entry);
         if (!result) {
             console.error(`Failed to save entry ${entry.id}`);
@@ -69,6 +71,7 @@ async function saveAllEntries(entries: Entry[]) {
     return updatedEntries;
 }
 
+// TODO: update
 async function exitApp(dirtyEntries: Entry[]) {
     // Save all entries before exiting
     if (dirtyEntries.length > 0) {
@@ -81,113 +84,104 @@ async function exitApp(dirtyEntries: Entry[]) {
 
 async function SaveShortcut(e: KeyboardEvent, entry: Entry) {
     if (e.ctrlKey && e.key === "s" && entry) {
-        return await entrySave(entry);
+        return await saveLocalEntry(entry);
     }
 }
 
 async function NewEntryShortcut(e: KeyboardEvent, tome: Tome, newEntryName: string) {
     if (e.ctrlKey && e.key === "n" && tome) {
-        return await NewEntry(tome, newEntryName);
+        return await CreateEntry(tome, newEntryName);
     }
 }
 
 async function getLastOpenedEntry(tome: Tome) {
     // Instead of using sync time, just get the most recently updated entry
     console.log(`Getting most recently updated entry for tome: ${tome.name}`);
-    const firstEntry = await getEntriesByTomeId(tome.id).then(entries => entries[0]);
-    if (!firstEntry) {
+    const sortedEntries = await getSortedAndUpdated(tome, "entry") as Entry[];
+    if (!sortedEntries || sortedEntries.length === 0) {
         console.warn(`No entries found for tome ${tome.name}.`);
         return null;
     }
-    return firstEntry;
+    return sortedEntries[0];
 }
 
-async function OpenTome(tome: Tome, currentTome?: Tome) {
-    if (currentTome && currentTome.id === tome.id) {
-        console.log(`Tome ${tome.name} is already open.`);
-        return currentTome;
-    }
 
+/** OpenTome - gets a specified tome from the database and returns it to the app
+ *
+ * @param {Tome} tome
+ * @param {Tome} [currentTome]
+ * @return {*} 
+ */
+async function OpenTome(tome: Tome): Promise<Tome | null> {
+    // get the tome from the database
     const existingTome = await getTomeById(tome.id);
     if (!existingTome) {
         console.warn(`Tome ${tome.name} does not exist.`);
         return null;
     }
-
-    await SelectTome(existingTome);
+    // return the tome
     return existingTome;
 }
 
-async function OpenTomeEntries(tome: Tome) {
-    return await getEntriesByTomeId(tome.id);
-}
-
-async function SelectEntry(entry: Entry, tome: Tome) { 
-    if (!entry || !tome) {
+/** OpenEntry - gets the entry data from the database and returns it.
+ *
+ * @param {Entry} entry
+ * @param {Tome} tome
+ * @return {Entry}
+ */
+async function OpenEntry(entry: Entry){ 
+    // database
+    if (!entry) {
         console.error("Invalid entry or tome provided.");
         return null;
     }
-    // TODO: Implement selection logic using context, props, or state management.
-    // For now, just log the selection.
-    console.log(`Selecting entry ${entry.name} in tome ${tome.name}.`);
-    return entry;
+    const returnedEntry = await getEntryById(entry.id);
+    return returnedEntry;
 }
 
-async function SelectTome(tome: Tome | null) {
-    if (!tome) {
-        console.error("Invalid tome provided.");
-        return null;
-    }
-    const returnedTome = getTomeById(tome.id);
-    if (!returnedTome) {
-        console.warn(`Tome ${tome.name} does not exist.`);
-        return null;
-    }
-    return returnedTome;
-}
-
+/** getLastOpenedTome - gets the tome that was last modified in the selected archive
+ *
+ * @param {Archive} archive
+ * @return {*} 
+ */
 async function getLastOpenedTome(archive: Archive) {
     // Instead of using sync time, just get the most recently updated tome
     console.log(`Getting most recently updated tome for archive: ${archive.name}`);
-    const firstTome = await getTomesByArchiveId(archive.id).then(tomes => tomes[0]);
-    if (!firstTome) {
+    const sortedTomes = await getSortedAndUpdated(archive, "tome") as Tome[];
+    if (!sortedTomes || sortedTomes.length === 0) {
         console.warn(`No tomes found for archive ${archive.name}.`);
         return null;
     }
-    return firstTome;
+    return sortedTomes[0] as Tome;
 }
 
-async function MarkEntryDirty(entry: Entry, dirtyEntries: Entry[]) {
-    if (entry && !dirtyEntries.includes(entry)) {
-        dirtyEntries.push(entry);
+async function MarkEntryDirty(entry: Entry, dirtyEntries: Entry[]){
+    if (!entry) return dirtyEntries;
+    // Return a fresh array so React state updates trigger a re-render
+    if (dirtyEntries.some(e => e.id === entry.id)) {
+        return dirtyEntries;
     }
-    return dirtyEntries;
+    return [...dirtyEntries, entry];
 }
 
-async function SelectArchive(archive: Archive) {
-    return getArchiveById(archive.id).then((selectedArchive) => {
-        if (!selectedArchive) {
-                console.warn(`Archive ${archive.name} does not exist.`);
-            return null;
-        }
-        return selectedArchive;
-    });
+async function OpenArchive(archive: Archive): Promise<Archive | null> {
+    const selectedArchive = await getArchiveById(archive.id)
+    if (!selectedArchive) {
+            console.warn(`Archive ${archive.name} does not exist.`);
+        return null;
+    }
+    return selectedArchive;
 }
 
-async function CreateArchive(archive: Archive) {
+async function CreateArchive(archive: Archive): Promise<Archive | null> {
+    if (!archive) {
+        console.error("Invalid archive, unable to create new archive");
+        return null;
+    }
     saveArchive(archive).then(() => {
         console.log(`Archive ${archive.name} created successfully.`);
     });
     return archive;
-}
-
-async function OpenArchive(archive: Archive) {
-    const tomes = await getTomesByArchiveId(archive.id);
-    if (tomes.length === 0) {
-        console.warn(`No tomes found for archive ${archive.name}.`);
-        return [];
-    }
-    return tomes;
 }
 
 async function GetArchives() {
@@ -200,20 +194,19 @@ async function GetArchives() {
 }
 
 async function GetEntryContent(entry: Entry) {
-    return await getEntryById(entry.id).then((fetchedEntry) => {
-        if (!fetchedEntry) {
-            console.warn(`Entry ${entry.name} does not exist.`);
-            return null;
-        }
-        return fetchedEntry.content;
-    }); 
+    const fetchedEntry = await getEntryById(entry.id);
+    if (!fetchedEntry?.content) {
+        console.error("Unable to fetch entry content.");
+        return null;
+    }
+    return fetchedEntry.content;
 }
 
 async function NewTomeShortcut(e: KeyboardEvent, archive: Archive, newTomeName: string) {
     if (e.ctrlKey && e.key === "t" && archive) {
-        return await NewTome(archive, newTomeName);
+        return await CreateTome(archive, newTomeName);
     }
 }
 
-export { NewTome, NewEntry, entrySave, saveAllEntries, exitApp, NewEntryShortcut, SelectTome, MarkEntryDirty, SaveShortcut,
-SelectArchive, CreateArchive, OpenArchive, SelectEntry, GetArchives, GetEntryContent, NewTomeShortcut, OpenTome, getLastOpenedTome, getLastOpenedEntry, OpenTomeEntries };
+export { CreateEntry, CreateTome, saveLocalEntry, OpenEntry, saveAllEntries, exitApp, NewEntryShortcut, MarkEntryDirty, SaveShortcut,
+     CreateArchive, OpenArchive, GetArchives, GetEntryContent, NewTomeShortcut, OpenTome, getLastOpenedTome, getLastOpenedEntry };

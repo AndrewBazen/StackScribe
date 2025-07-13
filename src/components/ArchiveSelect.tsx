@@ -3,20 +3,31 @@ import { Archive } from "../types/archive";
 import { Cross2Icon, PlusIcon } from "@radix-ui/react-icons";
 import ArchiveList from "./ArchiveList";
 import * as Dialog from "@radix-ui/react-dialog";
+import { SyncStatus } from "../lib/sync";
 
 interface ArchiveSelectProps {
     archives: Archive[];
     onArchiveClick: (archive: Archive) => void;
     onCreateArchive: (archive: Archive, tomeName: string) => void; // Pass tome name separately
+    syncStatus: SyncStatus;
 }
 
-const CreateArchiveDialog = (props: { onCreateArchive: (archive: Archive, tomeName: string) => void }) => {
-    const { onCreateArchive } = props;
+const CreateArchiveDialog = (props: { 
+    onCreateArchive: (archive: Archive, tomeName: string) => void;
+    syncStatus: SyncStatus;
+}) => {
+    const { onCreateArchive, syncStatus } = props;
     const archiveNameRef = React.useRef<HTMLInputElement>(null);
     const tomeNameRef = React.useRef<HTMLInputElement>(null);
 
     const handleCreateArchive = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
+        
+        if (!syncStatus.isReady) {
+            console.warn('⚠️ Cannot create archive while sync is in progress');
+            return;
+        }
+        
         const archiveName = archiveNameRef.current?.value;
         const tomeName = tomeNameRef.current?.value;
         if (archiveName && tomeName && e.currentTarget.checkValidity()) {
@@ -27,7 +38,6 @@ const CreateArchiveDialog = (props: { onCreateArchive: (archive: Archive, tomeNa
                 description: "",
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
-                tomes: [], // Empty - App will create the tome properly
             };
             
             onCreateArchive(archive, tomeName); // Pass tome name separately
@@ -41,7 +51,15 @@ const CreateArchiveDialog = (props: { onCreateArchive: (archive: Archive, tomeNa
     return (
         <Dialog.Root>
             <Dialog.Trigger asChild>
-                <button className="create-archive-button" aria-label="Create Archive">
+                <button 
+                    className="create-archive-button" 
+                    aria-label="Create Archive"
+                    disabled={!syncStatus.isReady}
+                    style={{ 
+                        opacity: syncStatus.isReady ? 1 : 0.5,
+                        cursor: syncStatus.isReady ? 'pointer' : 'not-allowed'
+                    }}
+                >
                     <PlusIcon />
                 </button>
             </Dialog.Trigger>
@@ -55,17 +73,46 @@ const CreateArchiveDialog = (props: { onCreateArchive: (archive: Archive, tomeNa
                     <form onSubmit={handleCreateArchive} className="dialog-form">
                         <fieldset className="dialog-fieldset">
                             <label className="dialog-label">Archive Name</label>
-                            <input type="text" placeholder="Archive Name" className="input" ref={archiveNameRef} required minLength={1} maxLength={255} pattern="^[a-zA-Z0-9]+$" title="Name must be alphanumeric" />
+                            <input 
+                                type="text" 
+                                placeholder="Archive Name" 
+                                className="input" 
+                                ref={archiveNameRef} 
+                                required 
+                                minLength={1} 
+                                maxLength={255} 
+                                pattern="^[a-zA-Z0-9 ]+$" 
+                                title="Name must be alphanumeric"
+                                disabled={!syncStatus.isReady}
+                            />
                         </fieldset>
                         <fieldset className="dialog-fieldset">
                             <label className="dialog-label">Tome Name</label>
-                            <input type="text" placeholder="Tome Name" className="input" ref={tomeNameRef} required minLength={1} maxLength={255} pattern="^[a-zA-Z0-9]+$" title="Name must be alphanumeric" />
+                            <input 
+                                type="text" 
+                                placeholder="Tome Name" 
+                                className="input" 
+                                ref={tomeNameRef} 
+                                required 
+                                minLength={1} 
+                                maxLength={255} 
+                                pattern="^[a-zA-Z0-9 ]+$" 
+                                title="Name must be alphanumeric"
+                                disabled={!syncStatus.isReady}
+                            />
                         </fieldset>
                         <div id="create-archive-buttons" className="dialog-buttons">
                             <Dialog.Close asChild>
                                 <button className="close-button" aria-label="Close"><Cross2Icon /></button>
                             </Dialog.Close>
-                            <button type="submit" className="create-button" aria-label="Create">Create</button>
+                            <button 
+                                type="submit" 
+                                className="create-button" 
+                                aria-label="Create"
+                                disabled={!syncStatus.isReady}
+                            >
+                                Create
+                            </button>
                         </div>
                     </form>
                    
@@ -76,17 +123,25 @@ const CreateArchiveDialog = (props: { onCreateArchive: (archive: Archive, tomeNa
 };
 
 export default function ArchiveSelect(props: ArchiveSelectProps) {
-    const { archives, onArchiveClick, onCreateArchive } = props;
+    const { archives, onArchiveClick, onCreateArchive, syncStatus } = props;
 
     const handleArchiveClick = (archive: Archive) => {
+        if (!syncStatus.isReady) {
+            console.warn('⚠️ Cannot open archive while sync is in progress');
+            return;
+        }
         onArchiveClick(archive);
     };
 
     return (
         <div id="archive-select" className="view">
-            <CreateArchiveDialog onCreateArchive={onCreateArchive} />
+            <CreateArchiveDialog onCreateArchive={onCreateArchive} syncStatus={syncStatus} />
             <div id="archive-list-container" className="view">
-                <ArchiveList archives={archives} onArchiveClick={handleArchiveClick} />
+                <ArchiveList 
+                    archives={archives} 
+                    onArchiveClick={handleArchiveClick} 
+                    syncStatus={syncStatus}
+                />
             </div>
         </div>
     );

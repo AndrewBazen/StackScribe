@@ -7,6 +7,4 @@ export interface Tome {
     description?: string;
     created_at: string;
     updated_at: string;
-    entries: Entry[]; // Optional for when loading from DB
-    last_selected?: boolean;
 }

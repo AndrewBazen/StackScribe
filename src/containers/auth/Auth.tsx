@@ -10,18 +10,25 @@ import { loginRequest } from './authConfig'; // see authConfig.ts code bellow
 const Auth: React.FC = () => {
   const { instance, accounts } = useMsal();
 
+  // Check user preference for Azure Sync
+  const azureSyncEnabled = localStorage.getItem('enableAzureSync') === 'true';
+
+  // If Azure Sync is disabled, skip authentication and render the app directly
+  if (!azureSyncEnabled) {
+    return <App />;
+  }
+
   useEffect(() => {
-    if (accounts.length > 0) {
+    if (accounts.length > 0 && azureSyncEnabled) {
       try {
-        // Initialize the sync manager when user is authenticated
+        // Initialize the sync manager only if preference is enabled
         const syncManager = initializeSyncManager(instance, accounts[0]);
         console.log('✅ Sync manager initialized for user:', accounts[0].username);
-        
-        // Note: Sync will be handled by the main App.tsx initialization
-        // to avoid duplicate sync operations
       } catch (error) {
         console.error('❌ Failed to initialize sync manager:', error);
       }
+    } else if (accounts.length > 0 && !azureSyncEnabled) {
+      console.log('ℹ️ Azure Sync is disabled. Skipping sync manager initialization.');
     }
   }, [instance, accounts]);
 
@@ -53,6 +60,11 @@ const Auth: React.FC = () => {
       
     } catch (error) {
       console.error('❌ Login failed:', error);
+      // Disable Azure Sync preference since login failed
+      localStorage.setItem('enableAzureSync', 'false');
+      // Optionally inform the user (toast/alert) and reload to reflect state
+      alert('Azure login failed. Sync has been disabled.');
+      window.location.reload();
     }
   };
 
@@ -71,18 +83,6 @@ const Auth: React.FC = () => {
     <>
       <AuthenticatedTemplate>
         <div>
-          <div style={{ position: 'absolute', top: '10px', right: '10px', zIndex: 1000 }}>
-            <button onClick={handleLogout} style={{ 
-              padding: '8px 16px', 
-              backgroundColor: '#dc3545', 
-              color: 'white', 
-              border: 'none', 
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}>
-              Logout
-            </button>
-          </div>
           <App />
         </div>
       </AuthenticatedTemplate>
