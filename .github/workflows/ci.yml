@@ -33,33 +33,94 @@ jobs:
           name: functions-build
           path: stackscribe-functions/dist/
 
-  build-tauri:
-    runs-on: ubuntu-latest
+  build-desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            bundles: deb,appimage
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: nsis,msi
+          - platform: macos-latest
+            target: universal-apple-darwin
+            bundles: app,dmg
+
+    runs-on: ${{ matrix.platform }}
     steps:
-      # Checkout the repository so the code & package.json are present
+      # Checkout the repository
       - uses: actions/checkout@v4
 
-      # Set up a compatible Node.js runtime for the Tauri CLI and install deps
+      # Set up Node.js
       - uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      # Install Linux system libraries required by Tauri (GTK, WebKit2, etc.)
+      # Set up Rust toolchain
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # Install Linux dependencies (Ubuntu only)
       - name: Install Linux build dependencies
+        if: matrix.platform == 'ubuntu-latest'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev \
             libgtk-3-dev \
-            libglib2.0-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
             patchelf
 
+      # Install frontend dependencies
       - run: npm ci
 
-      # Build the Tauri desktop app (debug build for CI)
+      # Build Tauri desktop app
       - uses: tauri-apps/tauri-action@v0
         with:
-          tauriScript: npm run tauri  # use v2 CLI from node_modules
-          args: "--debug --bundles deb,appimage"      # dev build; remove for release
+          tauriScript: npm run tauri
+          args: "--target ${{ matrix.target }} --bundles ${{ matrix.bundles }}"
+
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      # Checkout the repository
+      - uses: actions/checkout@v4
+
+      # Set up Node.js
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Set up Java for Android builds
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # Set up Android SDK
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      # Set up Rust with Android targets
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi
+
+      # Install frontend dependencies
+      - run: npm ci
+
+      # Initialize Tauri Android (if not already done)
+      - name: Initialize Tauri Android
+        run: npm run tauri android init
+        continue-on-error: true  # Skip if already initialized
+
+      # Build Android APK
+      - name: Build Android APK
+        run: npm run tauri android build
