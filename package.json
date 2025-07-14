@@ -64,7 +64,7 @@
     "turndown": "^7.2.0"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2",
+    "@tauri-apps/cli": "^2.6.2",
     "@types/react": "^18.3.1",
     "@types/react-dom": "^18.3.1",
     "@types/sql.js": "^1.4.9",
