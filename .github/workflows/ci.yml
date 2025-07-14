@@ -36,7 +36,18 @@ jobs:
   build-tauri:
     runs-on: ubuntu-latest
     steps:
+      # Checkout the repository so the code & package.json are present
+      - uses: actions/checkout@v4
+
+      # Set up a compatible Node.js runtime for the Tauri CLI and install deps
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm ci
+
+      # Build the Tauri desktop app (debug build for CI)
       - uses: tauri-apps/tauri-action@v0
         with:
-          tauriScript: npm run tauri
+          tauriScript: npm run tauri  # use v2 CLI from node_modules
           args: "--debug"      # dev build; remove for release
