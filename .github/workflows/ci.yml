@@ -62,4 +62,4 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         with:
           tauriScript: npm run tauri  # use v2 CLI from node_modules
-          args: "--debug --bundles deb, appimage"      # dev build; remove for release
+          args: "--debug --bundles deb,appimage"      # dev build; remove for release
