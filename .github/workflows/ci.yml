@@ -117,6 +117,16 @@ jobs:
           sdkmanager "ndk;26.3.11579264"
           echo "NDK_HOME=$ANDROID_HOME/ndk/26.3.11579264" >> $GITHUB_ENV
 
+      # Install OpenSSL for Android cross-compilation
+      - name: Setup OpenSSL for Android
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config
+          
+          # Set up environment variables for Android OpenSSL cross-compilation
+          echo "OPENSSL_NO_VENDOR=1" >> $GITHUB_ENV
+          echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
+
       # Set up Rust with Android targets
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
