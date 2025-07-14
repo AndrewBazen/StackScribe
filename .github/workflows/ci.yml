@@ -116,11 +116,6 @@ jobs:
       # Install frontend dependencies
       - run: npm ci
 
-      # Initialize Tauri Android (if not already done)
-      - name: Initialize Tauri Android
-        run: npm run tauri android init
-        continue-on-error: true  # Skip if already initialized
-
       # Build Android APK
       - name: Build Android APK
         run: npm run tauri android build
