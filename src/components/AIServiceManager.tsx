@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import '../Styles/AIServiceManager.css';
 
 interface ServiceStatus {
@@ -21,6 +22,7 @@ const AIServiceManager: React.FC = () => {
   });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const [startupStatus, setStartupStatus] = useState<string>('');
 
   const checkStatus = async () => {
     try {
@@ -68,7 +70,37 @@ const AIServiceManager: React.FC = () => {
   useEffect(() => {
     checkStatus();
     const interval = setInterval(checkStatus, 5000); // Check every 5 seconds
-    return () => clearInterval(interval);
+
+    // Listen for startup events
+    const setupEventListener = async () => {
+      const unlisten = await listen('ai-service-startup', (event: any) => {
+        const startupResult = event.payload;
+        console.log('AI service startup event:', startupResult);
+        
+        if (startupResult.status === 'success') {
+          setStartupStatus('AI service started automatically on app launch');
+          setMessage('AI service containers are starting up...');
+          // Check status more frequently during startup
+          const startupInterval = setInterval(checkStatus, 2000);
+          setTimeout(() => clearInterval(startupInterval), 30000); // Stop after 30s
+        } else if (startupResult.status === 'error') {
+          setStartupStatus(`Startup failed: ${startupResult.message}`);
+          setMessage(startupResult.message);
+        } else if (startupResult.status === 'skipped') {
+          setStartupStatus('Auto-start skipped: Docker not available');
+          setMessage(startupResult.message);
+        }
+      });
+      
+      return unlisten;
+    };
+
+    let unlistenPromise = setupEventListener();
+
+    return () => {
+      clearInterval(interval);
+      unlistenPromise.then(unlisten => unlisten());
+    };
   }, []);
 
   const getStatusIcon = () => {
@@ -102,6 +134,10 @@ const AIServiceManager: React.FC = () => {
           <span className="label">Features:</span>
           <span className="value">Vector similarity, Cross-encoder reranking, NER matching</span>
         </div>
+        <div className="info-item">
+          <span className="label">Deployment:</span>
+          <span className="value">Docker Compose (Qdrant + AI Service)</span>
+        </div>
       </div>
 
       <div className="service-controls">
@@ -128,8 +164,17 @@ const AIServiceManager: React.FC = () => {
         </button>
       </div>
 
+      {startupStatus && (
+        <div className="startup-status">
+          <h4>Startup Status:</h4>
+          <div className={`message ${startupStatus.includes('failed') || startupStatus.includes('skipped') ? 'error' : 'info'}`}>
+            {startupStatus}
+          </div>
+        </div>
+      )}
+
       {message && (
-        <div className={`message ${message.includes('Error') ? 'error' : 'info'}`}>
+        <div className={`message ${message.includes('Error') || message.includes('failed') ? 'error' : 'info'}`}>
           {message}
         </div>
       )}
@@ -137,10 +182,15 @@ const AIServiceManager: React.FC = () => {
       <div className="service-requirements">
         <h4>Requirements:</h4>
         <ul>
-          <li>Python 3.8+ installed</li>
-          <li>AI service dependencies installed (<code>pip install -r requirements.txt</code>)</li>
-          <li>Qdrant running on localhost:6333</li>
-          <li>spaCy model downloaded (<code>python -m spacy download en_core_web_sm</code>)</li>
+          <li>Docker & Docker Compose installed</li>
+          <li>Sufficient disk space for AI models (~2-3GB)</li>
+          <li>Available ports: 6333 (Qdrant), 8000 (AI Service)</li>
+          <li>Internet connection for initial model download</li>
+        </ul>
+        <h4>Services:</h4>
+        <ul>
+          <li><strong>Qdrant:</strong> Vector database (localhost:6333)</li>
+          <li><strong>AI Service:</strong> Link suggestions API (localhost:8000)</li>
         </ul>
       </div>
     </div>

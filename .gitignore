@@ -171,6 +171,9 @@ stackscribe-functions/.vscode/
 .dockerignore
 docker-compose.override.yml
 .docker/
+docker-compose.*.yml
+.env.docker
+docker-data/
 
 # =============================================================================
 # TESTING & COVERAGE

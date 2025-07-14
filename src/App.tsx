@@ -27,6 +27,7 @@ import logo from "../src-tauri/icons/icon.png";
 import Preferences from "./components/Preferences";
 import AILinkSuggestions from "./components/AILinkSuggestions";
 import { aiLinkService, LinkSuggestion } from "./services/aiLinkService";
+import StartupNotification from "./components/StartupNotification";
 
 const DIVIDER_SIZE = 2; // px
 
@@ -573,6 +574,9 @@ function App() {
 
   return (
     <>
+    {/* STARTUP NOTIFICATION */}
+    <StartupNotification />
+
     {/* Initialize the app on first load */}
     {/* This will set up the database and sync data from the server */}
 

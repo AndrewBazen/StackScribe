@@ -12,16 +12,42 @@ Advanced AI-powered link suggestion service using sentence transformers, cross-e
 
 ## Prerequisites
 
-1. **Qdrant**: Vector database running in Docker
-   ```bash
-   docker run -p 6333:6333 qdrant/qdrant
-   ```
+1. **Docker & Docker Compose**: Required for containerized deployment
+2. **Python 3.8+**: Required for local development (optional)
 
-2. **Python 3.8+**: Required for all dependencies
+## Installation & Usage
 
-## Installation
+### Option 1: Docker Compose (Recommended)
+```bash
+./docker-start.sh
+```
+This script will automatically:
+- Start Qdrant vector database container
+- Build and start the AI service container
+- Wait for all services to be healthy
+- Provide health status and endpoints
 
-### Option 1: Automatic Setup (Recommended)
+**Services:**
+- Qdrant: `http://localhost:6333`
+- AI Service: `http://localhost:8000`
+- API Documentation: `http://localhost:8000/docs`
+
+**Management commands:**
+```bash
+# Start services
+./docker-start.sh
+
+# Stop services
+docker-compose down
+
+# View logs
+docker-compose logs -f
+
+# Restart services
+docker-compose restart
+```
+
+### Option 2: Local Development
 ```bash
 ./start.sh
 ```
@@ -29,9 +55,14 @@ This script will automatically:
 - Create a virtual environment if it doesn't exist
 - Install all dependencies
 - Download the spaCy model
-- Start the service
+- Start the service locally
 
-### Option 2: Manual Setup
+**Note**: You'll need to start Qdrant separately:
+```bash
+docker run -p 6333:6333 qdrant/qdrant
+```
+
+### Option 3: Manual Setup
 1. Create virtual environment:
    ```bash
    python3 -m venv venv
@@ -48,21 +79,15 @@ This script will automatically:
    python -m spacy download en_core_web_sm
    ```
 
-## Usage
-
-1. Start the service:
+4. Start Qdrant:
    ```bash
-   ./start.sh
-   ```
-   Or manually:
-   ```bash
-   source venv/bin/activate
-   python run.py
+   docker run -p 6333:6333 qdrant/qdrant
    ```
 
-2. The service will be available at:
-   - API: `http://localhost:8000`
-   - Documentation: `http://localhost:8000/docs`
+5. Start the service:
+   ```bash
+   python main.py
+   ```
 
 ## API Endpoints
 

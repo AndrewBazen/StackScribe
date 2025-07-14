@@ -1,4 +1,5 @@
 use std::{path::{PathBuf}, process::{Command, Stdio, Child}, sync::Mutex};
+use tauri::Emitter;
 
 // AI service now handled via Python HTTP API
 
@@ -36,78 +37,189 @@ async fn get_current_dir() -> Result<String, String> {
 // AI services are now handled via Python HTTP API
 // Use start_python_service, stop_python_service, and python_service_status instead
 
-// Start Python AI service
+// Start AI service containers
 #[tauri::command]
 async fn start_python_service() -> Result<serde_json::Value, String> {
-    let mut service = PYTHON_SERVICE.lock().map_err(|e| e.to_string())?;
-    
-    if service.is_some() {
-        return Ok(serde_json::json!({
-            "status": "already_running",
-            "message": "Python service is already running"
-        }));
+    start_ai_service_internal().await
+}
+
+// Internal function to start AI service (used by startup and manual commands)
+async fn start_ai_service_internal() -> Result<serde_json::Value, String> {
+    // Check if containers are already running (without holding the lock)
+    let status_result = check_containers_status().await;
+    if let Ok(status) = &status_result {
+        if status.get("is_running").and_then(|v| v.as_bool()).unwrap_or(false) {
+            return Ok(serde_json::json!({
+                "status": "already_running",
+                "message": "AI service containers are already running"
+            }));
+        }
     }
     
-    // Try to start the Python service using the startup script
+    // Try to start the AI service using Docker Compose
     let child = Command::new("bash")
-        .arg("stackscribe-ai-service/start.sh")
+        .arg("stackscribe-ai-service/docker-start.sh")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("Failed to start Python service: {}", e))?;
+        .map_err(|e| format!("Failed to start AI service: {}", e))?;
     
-    *service = Some(child);
+    // Now acquire the lock to store the child process
+    {
+        let mut service = PYTHON_SERVICE.lock().map_err(|e| e.to_string())?;
+        *service = Some(child);
+    }
     
     Ok(serde_json::json!({
         "status": "started",
-        "message": "Python AI service started successfully"
+        "message": "AI service containers are starting up..."
     }))
 }
 
-// Stop Python AI service
+// Helper function to check container status
+async fn check_containers_status() -> Result<serde_json::Value, String> {
+    let containers_output = Command::new("docker-compose")
+        .arg("-f")
+        .arg("stackscribe-ai-service/docker-compose.yml")
+        .arg("ps")
+        .arg("-q")
+        .output()
+        .map_err(|e| format!("Failed to check container status: {}", e))?;
+    
+    let containers_running = !containers_output.stdout.is_empty();
+    
+    Ok(serde_json::json!({
+        "is_running": containers_running
+    }))
+}
+
+// Startup function to auto-start AI service
+#[tauri::command]
+async fn startup_ai_service() -> Result<serde_json::Value, String> {
+    println!("🚀 Starting AI service on app startup...");
+    
+    // Check if Docker is available
+    let docker_check = Command::new("docker")
+        .arg("info")
+        .output();
+    
+    match docker_check {
+        Ok(output) if output.status.success() => {
+            println!("✅ Docker is available, starting AI service...");
+            
+            // Start the AI service in the background
+            match start_ai_service_internal().await {
+                Ok(result) => {
+                    println!("🤖 AI service startup initiated");
+                    Ok(serde_json::json!({
+                        "status": "success",
+                        "message": "AI service startup initiated",
+                        "auto_started": true,
+                        "details": result
+                    }))
+                },
+                Err(e) => {
+                    println!("⚠️ Failed to start AI service on startup: {}", e);
+                    Ok(serde_json::json!({
+                        "status": "error",
+                        "message": format!("Failed to auto-start AI service: {}", e),
+                        "auto_started": false
+                    }))
+                }
+            }
+        },
+        _ => {
+            println!("⚠️ Docker not available, skipping AI service auto-start");
+            Ok(serde_json::json!({
+                "status": "skipped",
+                "message": "Docker not available, AI service not started",
+                "auto_started": false
+            }))
+        }
+    }
+}
+
+// Stop AI service using Docker Compose
 #[tauri::command]
 async fn stop_python_service() -> Result<serde_json::Value, String> {
     let mut service = PYTHON_SERVICE.lock().map_err(|e| e.to_string())?;
     
-    if let Some(mut child) = service.take() {
-        child.kill().map_err(|e| format!("Failed to stop Python service: {}", e))?;
+    // Use docker-compose down to stop services properly
+    let output = Command::new("docker-compose")
+        .arg("-f")
+        .arg("stackscribe-ai-service/docker-compose.yml")
+        .arg("down")
+        .output()
+        .map_err(|e| format!("Failed to execute docker-compose down: {}", e))?;
+    
+    if output.status.success() {
+        // Clear the tracked process since we stopped via docker-compose
+        if service.is_some() {
+            *service = None;
+        }
         
         Ok(serde_json::json!({
             "status": "stopped",
-            "message": "Python AI service stopped successfully"
+            "message": "AI service containers stopped successfully"
         }))
     } else {
+        let error_msg = String::from_utf8_lossy(&output.stderr);
         Ok(serde_json::json!({
-            "status": "not_running",
-            "message": "Python service is not running"
+            "status": "error",
+            "message": format!("Failed to stop containers: {}", error_msg)
         }))
     }
 }
 
-// Check Python AI service status
+// Check AI service status using Docker Compose
 #[tauri::command]
 async fn python_service_status() -> Result<serde_json::Value, String> {
-    let is_running = {
-        let service = PYTHON_SERVICE.lock().map_err(|e| e.to_string())?;
-        service.is_some()
-    };
+    // Check if Docker containers are running
+    let containers_output = Command::new("docker-compose")
+        .arg("-f")
+        .arg("stackscribe-ai-service/docker-compose.yml")
+        .arg("ps")
+        .arg("-q")
+        .output()
+        .map_err(|e| format!("Failed to check container status: {}", e))?;
     
-    // Also check if service is responding via HTTP
-    let mut is_healthy = false;
-    if is_running {
+    let containers_running = !containers_output.stdout.is_empty();
+    
+    // Check if services are responding via HTTP
+    let mut qdrant_healthy = false;
+    let mut ai_service_healthy = false;
+    
+    if containers_running {
+        // Check Qdrant health
+        if let Ok(response) = reqwest::get("http://localhost:6333/").await {
+            qdrant_healthy = response.status().is_success();
+        }
+        
+        // Check AI service health
         if let Ok(response) = reqwest::get("http://localhost:8000/health").await {
             if response.status().is_success() {
                 if let Ok(data) = response.json::<serde_json::Value>().await {
-                    is_healthy = data.get("status").and_then(|s| s.as_str()) == Some("healthy");
+                    ai_service_healthy = data.get("status").and_then(|s| s.as_str()) == Some("healthy");
                 }
             }
         }
     }
     
     Ok(serde_json::json!({
-        "is_running": is_running,
-        "is_healthy": is_healthy,
-        "endpoint": "http://localhost:8000"
+        "is_running": containers_running,
+        "is_healthy": ai_service_healthy && qdrant_healthy,
+        "services": {
+            "qdrant": {
+                "running": containers_running,
+                "healthy": qdrant_healthy,
+                "endpoint": "http://localhost:6333"
+            },
+            "ai_service": {
+                "running": containers_running,
+                "healthy": ai_service_healthy,
+                "endpoint": "http://localhost:8000"
+            }
+        }
     }))
 }
 
@@ -152,7 +264,40 @@ pub fn run() {
         .plugin(tauri_plugin_sql::Builder::default()
             .add_migrations("sqlite:stackscribe.db", migrations)
             .build())
-        .invoke_handler(tauri::generate_handler![echo, run_code, get_current_dir, start_python_service, stop_python_service, python_service_status])
+        .setup(|app| {
+            // Auto-start AI service on app startup
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                // Give the app a moment to fully initialize
+                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                
+                match startup_ai_service().await {
+                    Ok(result) => {
+                        println!("AI service startup result: {}", result);
+                        
+                        // Emit startup status to frontend
+                        if let Err(e) = app_handle.emit("ai-service-startup", &result) {
+                            println!("Failed to emit startup status: {}", e);
+                        }
+                    },
+                    Err(e) => {
+                        println!("AI service startup failed: {}", e);
+                        let error_result = serde_json::json!({
+                            "status": "error",
+                            "message": e,
+                            "auto_started": false
+                        });
+                        
+                        if let Err(emit_error) = app_handle.emit("ai-service-startup", &error_result) {
+                            println!("Failed to emit startup error: {}", emit_error);
+                        }
+                    }
+                }
+            });
+            
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![echo, run_code, get_current_dir, start_python_service, stop_python_service, python_service_status, startup_ai_service])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
