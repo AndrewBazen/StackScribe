@@ -38,5 +38,5 @@ jobs:
     steps:
       - uses: tauri-apps/tauri-action@v0
         with:
-          tauriScript: npm run tauri dev
+          tauriScript: npm run tauri
           args: "--debug"      # dev build; remove for release
