@@ -13,5 +13,6 @@
     "python.linting.flake8Enabled": true,
     "files.associations": {
         "*.py": "python"
-    }
+    },
+    "java.configuration.updateBuildConfiguration": "interactive"
 }

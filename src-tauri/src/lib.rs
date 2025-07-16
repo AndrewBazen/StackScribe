@@ -223,17 +223,17 @@ async fn python_service_status() -> Result<serde_json::Value, String> {
     }))
 }
 
-fn get_absolute_path_migration(path: &str) -> PathBuf {
-    // Get the current working directory
-    let cwd = std::env::current_dir()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| "unknown".to_string());
-    if path.starts_with('/') || path.starts_with('\\') {
-        return PathBuf::from(path);
-    }
-    let absolute_path = std::path::Path::new(&cwd).join(path);
-    return absolute_path;
-}   
+// fn get_absolute_path_migration(path: &str) -> PathBuf {
+//     // Get the current working directory
+//     let cwd = std::env::current_dir()
+//         .map(|p| p.to_string_lossy().to_string())
+//         .unwrap_or_else(|_| "unknown".to_string());
+//     if path.starts_with('/') || path.starts_with('\\') {
+//         return PathBuf::from(path);
+//     }
+//     let absolute_path = std::path::Path::new(&cwd).join(path);
+//     return absolute_path;
+// }   
 
 
 
@@ -243,16 +243,14 @@ fn get_absolute_path_migration(path: &str) -> PathBuf {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
 
-    let migration_pathbuf = get_absolute_path_migration("../data/migrations/001_initial_schema.sql");
-    let migration_sql = std::fs::read_to_string(&migration_pathbuf)
-        .expect("Failed to read migration file");
-    let migration_sql_static: &'static str = Box::leak(migration_sql.into_boxed_str());
-    println!("🔧 Migration SQL path: {}", migration_pathbuf.display());
-    println!("📄 Migration SQL content length: {} bytes", migration_sql_static.len());   
-
+    // Embed the migration SQL at compile-time so it’s always available, even on mobile
+    // where the external file isn’t packaged inside the APK.
+    const MIGRATION_SQL: &str = include_str!("../../data/migrations/001_initial_schema.sql");
+    println!("📄 Embedded migration SQL length: {} bytes", MIGRATION_SQL.len());
+ 
     let migrations = vec![tauri_plugin_sql::Migration {
         version: 1,
-        sql: migration_sql_static, // Use to_string_lossy() to convert PathBuf to String
+        sql: MIGRATION_SQL,
         description: "Initial migration",
         kind: tauri_plugin_sql::MigrationKind::Up,
     }];

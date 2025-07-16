@@ -54,6 +54,81 @@
 			"options": {
 				"cwd": "${workspaceFolder}/stackscribe-functions"
 			}
+		},
+		{
+			"type": "shell",
+			"label": "Android: List Emulators",
+			"command": "& \"$env:ANDROID_HOME\\emulator\\emulator.exe\" -list-avds",
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": false
+			},
+			"problemMatcher": []
+		},
+		{
+			"type": "shell",
+			"label": "Android: Start First Emulator",
+			"command": "$avdName = (& \"$env:ANDROID_HOME\\emulator\\emulator.exe\" -list-avds | Select-Object -First 1); if ($avdName) { & \"$env:ANDROID_HOME\\emulator\\emulator.exe\" -avd $avdName } else { Write-Host \"No emulators found\" }",
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": false
+			},
+			"problemMatcher": []
+		},
+		{
+			"type": "shell",
+			"label": "Android: Check Connected Devices",
+			"command": "& \"$env:ANDROID_HOME\\platform-tools\\adb.exe\" devices",
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": false
+			},
+			"problemMatcher": []
+		},
+		{
+			"type": "shell",
+			"label": "Tauri: Run Android Dev",
+			"command": "npm run tauri android dev",
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": false
+			},
+			"problemMatcher": []
+		},
+		{
+			"type": "shell",
+			"label": "Tauri: Build Android APK",
+			"command": "npm run tauri android build",
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": false
+			},
+			"problemMatcher": []
 		}
 	]
 }

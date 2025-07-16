@@ -27,12 +27,12 @@ client    = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
 # ---------- FastAPI app ----------
 app = FastAPI(title="StackScribe AI Link Service")
 
-# Add CORS middleware to allow requests from Tauri app
+# Add CORS middleware to allow requests from Tauri app and web clients
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:1420", "https://tauri.localhost", "tauri://localhost"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=["http://localhost:1420", "https://tauri.localhost", "tauri://localhost", "*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 

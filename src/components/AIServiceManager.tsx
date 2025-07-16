@@ -23,17 +23,42 @@ const AIServiceManager: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [startupStatus, setStartupStatus] = useState<string>('');
+  
+  // Check if user has Azure sync enabled
+  const isAzureEnabled = () => {
+    const enableAzureSync = localStorage.getItem('enableAzureSync');
+    return enableAzureSync ? JSON.parse(enableAzureSync) : false;
+  };
+
+  const getServiceEndpoint = () => {
+    return isAzureEnabled() ? 
+      'https://stackscribe-ai-service-prod.azurecontainerapps.io' : 
+      'http://localhost:8000';
+  };
 
   const checkStatus = async () => {
     try {
-      const response = await invoke<ServiceStatus>('python_service_status');
-      setStatus(response);
+      if (isAzureEnabled()) {
+        // For Azure service, check health directly
+        const endpoint = getServiceEndpoint();
+        const response = await fetch(`${endpoint}/health`);
+        const isHealthy = response.ok;
+        setStatus({
+          is_running: isHealthy,
+          is_healthy: isHealthy,
+          endpoint: endpoint
+        });
+      } else {
+        // For local service, use the Tauri command
+        const response = await invoke<ServiceStatus>('python_service_status');
+        setStatus(response);
+      }
     } catch (error) {
       console.error('Error checking service status:', error);
       setStatus({
         is_running: false,
         is_healthy: false,
-        endpoint: 'http://localhost:8000'
+        endpoint: getServiceEndpoint()
       });
     }
   };
@@ -136,25 +161,34 @@ const AIServiceManager: React.FC = () => {
         </div>
         <div className="info-item">
           <span className="label">Deployment:</span>
-          <span className="value">Docker Compose (Qdrant + AI Service)</span>
+          <span className="value">
+            {isAzureEnabled() ? 
+              'Azure Container Apps' : 
+              'Docker Compose (Qdrant + AI Service)'
+            }
+          </span>
         </div>
       </div>
 
       <div className="service-controls">
-        <button 
-          className="btn btn-primary" 
-          onClick={startService}
-          disabled={loading || status.is_running}
-        >
-          {loading ? 'Starting...' : 'Start Service'}
-        </button>
-        <button 
-          className="btn btn-secondary" 
-          onClick={stopService}
-          disabled={loading || !status.is_running}
-        >
-          {loading ? 'Stopping...' : 'Stop Service'}
-        </button>
+        {!isAzureEnabled() && (
+          <>
+            <button 
+              className="btn btn-primary" 
+              onClick={startService}
+              disabled={loading || status.is_running}
+            >
+              {loading ? 'Starting...' : 'Start Service'}
+            </button>
+            <button 
+              className="btn btn-secondary" 
+              onClick={stopService}
+              disabled={loading || !status.is_running}
+            >
+              {loading ? 'Stopping...' : 'Stop Service'}
+            </button>
+          </>
+        )}
         <button 
           className="btn btn-outline" 
           onClick={checkStatus}
@@ -162,6 +196,13 @@ const AIServiceManager: React.FC = () => {
         >
           Refresh Status
         </button>
+        {isAzureEnabled() && (
+          <div className="azure-service-info">
+            <p>Service managed by Azure Container Apps</p>
+            <p>Automatically scales based on demand</p>
+            <p>Use Azure Portal for advanced configuration</p>
+          </div>
+        )}
       </div>
 
       {startupStatus && (
@@ -180,18 +221,39 @@ const AIServiceManager: React.FC = () => {
       )}
 
       <div className="service-requirements">
-        <h4>Requirements:</h4>
-        <ul>
-          <li>Docker & Docker Compose installed</li>
-          <li>Sufficient disk space for AI models (~2-3GB)</li>
-          <li>Available ports: 6333 (Qdrant), 8000 (AI Service)</li>
-          <li>Internet connection for initial model download</li>
-        </ul>
-        <h4>Services:</h4>
-        <ul>
-          <li><strong>Qdrant:</strong> Vector database (localhost:6333)</li>
-          <li><strong>AI Service:</strong> Link suggestions API (localhost:8000)</li>
-        </ul>
+        {isAzureEnabled() ? (
+          <>
+            <h4>Azure Configuration:</h4>
+            <ul>
+              <li>Service hosted on Azure Container Apps</li>
+              <li>Automatic scaling based on demand</li>
+              <li>Persistent vector database with Azure Storage</li>
+              <li>HTTPS endpoint with SSL certificates</li>
+              <li>Automatic fallback to local service if Azure is unavailable</li>
+            </ul>
+            <h4>Services:</h4>
+            <ul>
+              <li><strong>Qdrant:</strong> Vector database (Azure internal)</li>
+              <li><strong>AI Service:</strong> Link suggestions API ({status.endpoint})</li>
+            </ul>
+          </>
+        ) : (
+          <>
+            <h4>Requirements:</h4>
+            <ul>
+              <li>Docker & Docker Compose installed</li>
+              <li>Sufficient disk space for AI models (~2-3GB)</li>
+              <li>Available ports: 6333 (Qdrant), 8000 (AI Service)</li>
+              <li>Internet connection for initial model download</li>
+            </ul>
+            <h4>Services:</h4>
+            <ul>
+              <li><strong>Qdrant:</strong> Vector database (localhost:6333)</li>
+              <li><strong>AI Service:</strong> Link suggestions API (localhost:8000)</li>
+            </ul>
+            <p><em>Tip: Enable Azure Sync in preferences to use cloud AI service</em></p>
+          </>
+        )}
       </div>
     </div>
   );
