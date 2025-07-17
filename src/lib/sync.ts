@@ -274,8 +274,8 @@ export class AzureSyncManager implements SyncManager {
             // Insert entries
             for (const entry of entries) {
               await db.execute(
-                'INSERT INTO entries (id, tome_id, name, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-                [entry.id, entry.tome_id, entry.name, entry.content, entry.created_at, entry.updated_at]
+                'INSERT INTO entries (id, tome_id, name, content, entry_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                [entry.id, entry.tome_id, entry.name, entry.content, entry.entry_type, entry.created_at, entry.updated_at]
               );
             }
           } else {
@@ -307,8 +307,8 @@ export class AzureSyncManager implements SyncManager {
               // Insert entries
               for (const entry of entries) {
                 await db.execute(
-                  'INSERT INTO entries (id, tome_id, name, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-                  [entry.id, entry.tome_id, entry.name, entry.content, entry.created_at, entry.updated_at]
+                  'INSERT INTO entries (id, tome_id, name, content, entry_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                  [entry.id, entry.tome_id, entry.name, entry.content, entry.entry_type, entry.created_at, entry.updated_at]
                 );
               }
 

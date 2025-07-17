@@ -24,6 +24,7 @@ interface Entry {
   tome_id: string;
   name: string;
   content: string;
+  entry_type: string;
   created_at: string;
   updated_at: string;
 }
@@ -220,6 +221,7 @@ async function handleSyncUpload(
                tome_id,
                name,
                content,
+               entry_type,
                created_at,
                updated_at,
                @userId AS user_id
@@ -229,6 +231,7 @@ async function handleSyncUpload(
           tome_id      NVARCHAR(50)  '$.tome_id',
           name         NVARCHAR(255) '$.name',
           content      NVARCHAR(MAX) '$.content',
+          entry_type   NVARCHAR(50)  '$.entry_type',
           created_at   NVARCHAR(50)  '$.created_at',
           updated_at   NVARCHAR(50)  '$.updated_at'
         )
@@ -238,9 +241,10 @@ async function handleSyncUpload(
         SET tome_id    = source.tome_id,
             name       = source.name,
             content    = source.content,
+            entry_type = source.entry_type,
             updated_at = source.updated_at
-      WHEN NOT MATCHED THEN INSERT (id, tome_id, name, content, created_at, updated_at, user_id)
-        VALUES (source.id, source.tome_id, source.name, source.content, source.created_at, source.updated_at, source.user_id);
+      WHEN NOT MATCHED THEN INSERT (id, tome_id, name, content, entry_type, created_at, updated_at, user_id)
+        VALUES (source.id, source.tome_id, source.name, source.content, source.entry_type, source.created_at, source.updated_at, source.user_id);
 
       COMMIT TRANSACTION;`;
 

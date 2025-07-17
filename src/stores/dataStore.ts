@@ -114,8 +114,8 @@ export const saveEntry = async (entry: Entry): Promise<QueryResult> => {
 
     if (!existing || new Date(existing.updated_at) < new Date(entry.updated_at)) {
         return await db.execute(
-            `INSERT OR REPLACE INTO entries (id, tome_id, name, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
-            [entry.id, entry.tome_id, entry.name, entry.content, entry.created_at, entry.updated_at]
+            `INSERT OR REPLACE INTO entries (id, tome_id, name, content, entry_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [entry.id, entry.tome_id, entry.name, entry.content, entry.entry_type, entry.created_at, entry.updated_at]
         );
     } else if (new Date(existing.updated_at) > new Date(entry.updated_at)) {
         console.warn(`⏩ Skipping entry ${entry.name} - remote is newer than local.`);

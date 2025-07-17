@@ -27,12 +27,13 @@ async function CreateTome(archive: Archive, name: string): Promise<Tome> {
     return tome;
 }
 
-async function CreateEntry(tome: Tome, title: string): Promise<Entry> {
+async function CreateEntry(tome: Tome, title: string, entry_type: "generic" | "requirement" | "specification" | "meeting" | "design" | "implementation" | "test" | "other" = "generic"): Promise<Entry> {
     const entry: Entry = {
         id: crypto.randomUUID(),
         tome_id: tome.id,
         name: title, // Using name for backwards compatibility
         content: "",
+        entry_type: entry_type,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
     };
@@ -90,7 +91,7 @@ async function SaveShortcut(e: KeyboardEvent, entry: Entry) {
 
 async function NewEntryShortcut(e: KeyboardEvent, tome: Tome, newEntryName: string) {
     if (e.ctrlKey && e.key === "n" && tome) {
-        return await CreateEntry(tome, newEntryName);
+        return await CreateEntry(tome, newEntryName, "generic");
     }
 }
 

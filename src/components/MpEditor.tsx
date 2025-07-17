@@ -1,8 +1,8 @@
-import CodeMirror from "@uiw/react-codemirror";
+import CodeMirror, { Extension } from "@uiw/react-codemirror";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { syntaxTree } from "@codemirror/language";
-import { EditorView, keymap } from "@codemirror/view";
+import { Decoration, DecorationSet, EditorView, keymap } from "@codemirror/view";
 import type { SyntaxNode } from "@lezer/common";
 import { basicSetup } from "codemirror";
 import { TextToMarkdown } from "../Utils/MarkdownTools";
@@ -45,9 +45,10 @@ async function runCode(code: string) {
 interface MdEditorProps {
   value: string;
   onEntryChange: (nextValue: string) => void;
+  decorations: Extension[];
 }
 
-export function MdEditor({ value, onEntryChange }: MdEditorProps) {
+export function MdEditor({ value, onEntryChange, decorations }: MdEditorProps) {
   const [markdown, setMarkdown] = useState(value);
 
   // Update editor text whenever parent passes a different `value`
@@ -59,7 +60,7 @@ export function MdEditor({ value, onEntryChange }: MdEditorProps) {
     <CodeMirror
       className="editor"
       value={markdown}
-      extensions={[md, runKeymap, TextToMarkdown, basicSetup, EditorView.lineWrapping, myTheme]}
+      extensions={[md, runKeymap, TextToMarkdown, basicSetup, EditorView.lineWrapping, myTheme, ...decorations]}
       theme={myTheme}
       onChange={(v) => {
         setMarkdown(v);

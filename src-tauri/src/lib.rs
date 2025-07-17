@@ -245,15 +245,25 @@ pub fn run() {
 
     // Embed the migration SQL at compile-time so it’s always available, even on mobile
     // where the external file isn’t packaged inside the APK.
-    const MIGRATION_SQL: &str = include_str!("../../data/migrations/001_initial_schema.sql");
-    println!("📄 Embedded migration SQL length: {} bytes", MIGRATION_SQL.len());
+    const INITIAL_SCHEMA_SQL: &str = include_str!("../../data/migrations/001_initial_schema.sql");
+    const REQUIREMENT_CLARITY_SQL: &str = include_str!("../../data/migrations/002_add_requirement_clarity.sql");
+    println!("📄 Embedded initial schema SQL length: {} bytes", INITIAL_SCHEMA_SQL.len());
+    println!("📄 Embedded requirement clarity SQL length: {} bytes", REQUIREMENT_CLARITY_SQL.len());
  
-    let migrations = vec![tauri_plugin_sql::Migration {
-        version: 1,
-        sql: MIGRATION_SQL,
-        description: "Initial migration",
-        kind: tauri_plugin_sql::MigrationKind::Up,
-    }];
+    let migrations = vec![
+        tauri_plugin_sql::Migration {
+            version: 1,
+            sql: INITIAL_SCHEMA_SQL,
+            description: "Initial schema",
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 2,
+            sql: REQUIREMENT_CLARITY_SQL,
+            description: "Add requirement clarity",
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+    ];
     
 
     tauri::Builder::default()
