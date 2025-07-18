@@ -1,6 +1,6 @@
 import "./Styles/App.css";
 import { MdEditor } from "./components/MpEditor";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { NavIconButton } from "./components/NavIconButton";
 import EntryView from "./components/EntryView";
 import { Entry } from "./types/entry";
@@ -22,8 +22,9 @@ import PreviewPanel from "./components/PreviewPanel";
 import NamePrompt from "./components/NamePrompt";
 import { getSyncManager, SyncStatus } from "./lib/sync";
 import { getDb } from "./lib/db";
-import { getTomesByArchiveId, saveEntry, getEntriesByTomeId } from "./stores/dataStore";
+import { getTomesByArchiveId, saveEntry, getEntriesByTomeId, deleteEntry } from "./stores/dataStore";
 import TabBar from "./components/TabBar";
+import { Window } from "@tauri-apps/api/window";
 import logo from "../src-tauri/icons/icon.png";
 import Preferences from "./components/Preferences";
 import AILinkSuggestions from "./components/AILinkSuggestions";
@@ -51,6 +52,10 @@ function App() {
   const [dirtyEntries, setDirtyEntries] = useState<Entry[]>([]);
   const [ShowEntryPrompt, setShowEntryPrompt] = useState<boolean>(false);
   const [ShowTomePrompt, setShowTomePrompt] = useState<boolean>(false);
+  const [ShowRenamePrompt, setShowRenamePrompt] = useState<boolean>(false);
+  const [entryToRename, setEntryToRename] = useState<Entry | null>(null);
+  const [ShowDeleteConfirm, setShowDeleteConfirm] = useState<boolean>(false);
+  const [entryToDelete, setEntryToDelete] = useState<Entry | null>(null);
   const [tabbedEntries, setTabbedEntries] = useState<Entry[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [panelsVisible, setPanelsVisible] = useState<boolean>(true);
@@ -213,15 +218,15 @@ function App() {
     setMarkdown(e.content ?? "");
   };
 
-  // save the entry when the user presses Ctrl+S
-  const handleSave = async () => {
+  // save the entry when the user presses Cmd+S/Ctrl+S
+  const handleSave = useCallback(async () => {
       if (!entry) return;
       // Ensure entry timestamp is fresh so saveEntry persists the new content
       entry.updated_at = new Date().toISOString();
       let result = await saveEntry(entry as Entry);
       if (result) {
         // If the entry was saved successfully, remove it from dirty entries
-        setDirtyEntries(dirtyEntries.filter(e => e.id !== (entry as Entry).id));
+        setDirtyEntries(prev => prev.filter(e => e.id !== (entry as Entry).id));
         console.log(`Entry ${entry?.name} saved successfully`);
         console.log("DirtyEntries:")
         for (var e of dirtyEntries) {
@@ -231,7 +236,7 @@ function App() {
         // If the save failed, log an error
         console.error("Failed to save entry ", entry?.name);
       }
-  };
+  }, [entry, dirtyEntries]);
 
   const handleSaveAll = async () => {
     setDirtyEntries(await saveAllEntries(dirtyEntries as Entry[]));
@@ -239,7 +244,7 @@ function App() {
 
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleEntryChanged = async (content: string) => {
+  const handleEntryChanged = useCallback(async (content: string) => {
      // update markdown shown in preview
      setMarkdown(content);
 
@@ -260,10 +265,14 @@ function App() {
        clearTimeout(saveTimeout.current);
      }
      saveTimeout.current = setTimeout(async () => {
-       await saveLocalEntry(entry);
-       setDirtyEntries(prev => prev.filter(e => e.id !== entry.id));
+       const result = await saveLocalEntry(entry);
+       if (result) {
+         // Only remove from dirty list if save was successful
+         setDirtyEntries(prev => prev.filter(e => e.id !== entry.id));
+         console.log(`Auto-saved entry ${entry?.name}`);
+       }
      }, 1000); // save 1s after typing stops
-   };
+   }, [entry]);
 
   //------ CREATE NEW TOME/ENTRY ------
 
@@ -454,32 +463,78 @@ function App() {
 
   // Rename an entry
   const handleRenameEntry = async (entry: Entry) => {
-    const newName = prompt("New entry name", entry.name);
-    if (!newName || newName === entry.name) return;
-    entry.name = newName;
-    entry.updated_at = new Date().toISOString();
-    await saveEntry(entry);
-    setEntries([...entries]);          // refresh list
+    setEntryToRename(entry);
+    setShowRenamePrompt(true);
+  };
+
+  const handleRenameConfirm = async (newName: string) => {
+    if (!entryToRename || !newName || newName === entryToRename.name) return;
+    
+    // Create updated entry with new name and fresh timestamp
+    const updatedEntry = { 
+      ...entryToRename, 
+      name: newName, 
+      updated_at: new Date().toISOString() 
+    };
+    
+    // Save to database
+    const result = await saveEntry(updatedEntry);
+    if (!result) {
+      console.error("Failed to save renamed entry:", newName);
+      return;
+    }
+    
+    // Update state arrays
+    setEntries(entries.map((e) => e.id === entryToRename.id ? updatedEntry : e));
+    setTabbedEntries(tabbedEntries.map((t) => t.id === entryToRename.id ? updatedEntry : t));
+    
+    // Update current entry if it's the one being renamed
+    if (entry && entry.id === entryToRename.id) {
+      setEntry(updatedEntry);
+    }
+    
+    setShowRenamePrompt(false);
+    setEntryToRename(null);
+    
+    console.log(`Entry renamed to "${newName}" and saved successfully`);
   };
 
   // Delete an entry
   const handleDeleteEntry = async (entry: Entry) => {
-    if (confirm(`Delete "${entry.name}"?`)) {
-      await saveEntry(entry); // Assuming deleteEntry is a function that saves the updated entry
-      setEntries(entries.filter((e) => e.id !== entry.id));
-      setTabbedEntries(tabbedEntries.filter((e) => e.id !== entry.id));
-      if (activeTabId === entry.id) setActiveTabId(null);
+    setEntryToDelete(entry);
+    setShowDeleteConfirm(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!entryToDelete) return;
+    await deleteEntry(entryToDelete.id);
+    setEntries(entries.filter((e) => e.id !== entryToDelete.id));
+    setTabbedEntries(tabbedEntries.filter((e) => e.id !== entryToDelete.id));
+    if (activeTabId === entryToDelete.id) {
+      setActiveTabId(tabbedEntries[0]?.id || null);
+      setEntry(tabbedEntries[0] || null);
+      setMarkdown(tabbedEntries[0]?.content || "");
     }
+    setShowDeleteConfirm(false);
+    setEntryToDelete(null);
   };
 
   // Handle entry saving via keyboard shortcut
-  // This will save the current entry when the user presses Ctrl+S
+  // This will save the current entry when the user presses Cmd+S (macOS) or Ctrl+S (Windows/Linux)
   useEffect(() => {
-    window.addEventListener("keydown", (e) => SaveShortcut(e, entry as Entry));
-    return () => {
-      window.removeEventListener("keydown", (e) => SaveShortcut(e, entry as Entry));
+    const handleKeyDown = async (e: KeyboardEvent) => {
+      // Support both Cmd+S (macOS) and Ctrl+S (Windows/Linux)
+      if ((e.metaKey || e.ctrlKey) && e.key === "s" && entry) {
+        e.preventDefault(); // Prevent browser's default save behavior
+        await handleSave(); // Use the existing handleSave function that manages dirty state
+      }
     };
-  }, [entry]);
+    
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [entry, handleSave]);
 
   useEffect(() => {
     const handleBeforeUnload = async (e: BeforeUnloadEvent) => {
@@ -635,6 +690,19 @@ function App() {
     {/* NAME PROMPT */}
     {ShowEntryPrompt && <NamePrompt title="New Entry"  label="Entry Name" placeholder="Enter a name for the new entry" onClose={handleShowEntryPrompt} onConfirm={(name: string, entry_type: string) => { handleNewEntry(name, entry_type as "generic" | "requirement" | "specification" | "meeting" | "design" | "implementation" | "test" | "other"); handleShowEntryPrompt(false); }} />}
     {ShowTomePrompt && <NamePrompt title="New Tome" label="Tome Name" placeholder="Enter a name for the new tome" onClose={handleShowTomePrompt} onConfirm={(name: string) => {handleNewTome(name); handleShowTomePrompt(false)}} />}
+    {ShowRenamePrompt && entryToRename && <NamePrompt title="Rename Entry" label="Entry Name" placeholder="Enter a new name for the entry" onClose={() => setShowRenamePrompt(false)} onConfirm={(name: string) => {handleRenameConfirm(name); setShowRenamePrompt(false)}} />}
+    {ShowDeleteConfirm && entryToDelete && (
+      <div className="modal-overlay">
+        <div className="modal-content">
+          <h3>Delete Entry</h3>
+          <p>Are you sure you want to delete "{entryToDelete.name}"?</p>
+          <div className="modal-buttons">
+            <button onClick={() => setShowDeleteConfirm(false)}>Cancel</button>
+            <button onClick={handleDeleteConfirm} className="delete-button">Delete</button>
+          </div>
+        </div>
+      </div>
+    )}
 
     {/* START WINDOW */}
     <StartWindow 
@@ -690,8 +758,12 @@ function App() {
           <EntryView 
             entries={entries} 
             onEntryClick={handleEntryClick} 
-            onRenameEntry={handleRenameEntry}
-            onDeleteEntry={handleDeleteEntry}
+            onRenameEntry={(e: Entry) => {
+              handleRenameEntry(e);
+            }}
+            onDeleteEntry={(e: Entry) => {
+              handleDeleteEntry(e);
+            }}
           />
         </div>
       )}

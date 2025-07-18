@@ -442,15 +442,103 @@ button:active {
   color: #fff;
   cursor: pointer;
   z-index: 1000;
+  outline: none;
+  box-shadow: 0 10px 38px -10px rgba(22, 23, 24, 0.35), 0 10px 20px -15px rgba(22, 23, 24, 0.2);
 }
 .context-menu [data-radix-context-menu-item] {
   padding: 4px 12px;
   border-radius: 4px;
   cursor: pointer;
+  outline: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  position: relative;
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  line-height: 1;
+  color: #fff;
+  border: none;
+  background: none;
+  font-family: inherit;
 }
 .context-menu [data-radix-context-menu-item]:hover {
   background: #2a2a2a;
   cursor: pointer;
+}
+.context-menu [data-radix-context-menu-item]:focus {
+  background: #2a2a2a;
+  outline: none;
+}
+.context-menu [data-radix-context-menu-item][data-disabled] {
+  color: #888;
+  pointer-events: none;
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: #212121;
+  border: 1px solid #50EFB8;
+  border-radius: 8px;
+  padding: 24px;
+  max-width: 400px;
+  width: 90%;
+  box-shadow: 0 10px 38px -10px rgba(22, 23, 24, 0.35);
+}
+
+.modal-content h3 {
+  margin: 0 0 16px 0;
+  color: #fff;
+  font-size: 18px;
+}
+
+.modal-content p {
+  margin: 0 0 24px 0;
+  color: #ccc;
+  font-size: 14px;
+}
+
+.modal-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.modal-buttons button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  background: #333;
+  color: #fff;
+  transition: background 0.2s;
+}
+
+.modal-buttons button:hover {
+  background: #444;
+}
+
+.modal-buttons .delete-button {
+  background: #e74c3c;
+}
+
+.modal-buttons .delete-button:hover {
+  background: #c0392b;
 }
 
 

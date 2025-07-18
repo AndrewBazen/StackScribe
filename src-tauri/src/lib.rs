@@ -236,12 +236,40 @@ async fn python_service_status() -> Result<serde_json::Value, String> {
 // }   
 
 
+// --------- stripe api ---------
+
+#[tauri::command]
+async fn create_checkout_session_tauri(user_id: String) -> Result<String, String> {
+    let stripe_key = std::env::var("STRIPE_SECRET_KEY").map_err(|e| e.to_string())?;
+    let client = Client::new(stripe_key);
+    let app_state = Arc::new(AppState { stripe: client });
+    let checkout_url = create_checkout_session(app_state, user_id).await?;
+    Ok(checkout_url)
+}
+
+
 
 
 // --------- main entry point ---------
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+
+    const enable_stripe: bool = true;
+
+    if enable_stripe {
+        // init stripe
+        use std::sync::Arc;
+        use stripe::Client;
+        use stripe_api::{AppState, create_checkout_session};
+
+        let stripe_key = std::env::var("STRIPE_SECRET_KEY")
+            .expect("STRIPE_SECRET_KEY must be set");
+
+        let stripe_client = Client::new(stripe_key);
+        let app_state = Arc::new(AppState { stripe: stripe_client });
+    }
+
 
     // Embed the migration SQL at compile-time so it’s always available, even on mobile
     // where the external file isn’t packaged inside the APK.
@@ -305,7 +333,16 @@ pub fn run() {
             
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![echo, run_code, get_current_dir, start_python_service, stop_python_service, python_service_status, startup_ai_service])
+        .invoke_handler(tauri::generate_handler![
+            echo,
+            run_code,
+            get_current_dir,
+            start_python_service,
+            stop_python_service,
+            python_service_status,
+            startup_ai_service,
+            create_checkout_session_tauri,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

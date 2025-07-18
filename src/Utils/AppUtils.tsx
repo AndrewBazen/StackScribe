@@ -84,13 +84,17 @@ async function exitApp(dirtyEntries: Entry[]) {
 }
 
 async function SaveShortcut(e: KeyboardEvent, entry: Entry) {
-    if (e.ctrlKey && e.key === "s" && entry) {
+    // Support both Cmd+S (macOS) and Ctrl+S (Windows/Linux)
+    if ((e.metaKey || e.ctrlKey) && e.key === "s" && entry) {
+        e.preventDefault(); // Prevent browser's default save behavior
         return await saveLocalEntry(entry);
     }
 }
 
 async function NewEntryShortcut(e: KeyboardEvent, tome: Tome, newEntryName: string) {
-    if (e.ctrlKey && e.key === "n" && tome) {
+    // Support both Cmd+N (macOS) and Ctrl+N (Windows/Linux)
+    if ((e.metaKey || e.ctrlKey) && e.key === "n" && tome) {
+        e.preventDefault(); // Prevent browser's default new window behavior
         return await CreateEntry(tome, newEntryName, "generic");
     }
 }
@@ -204,7 +208,9 @@ async function GetEntryContent(entry: Entry) {
 }
 
 async function NewTomeShortcut(e: KeyboardEvent, archive: Archive, newTomeName: string) {
-    if (e.ctrlKey && e.key === "t" && archive) {
+    // Support both Cmd+T (macOS) and Ctrl+T (Windows/Linux)
+    if ((e.metaKey || e.ctrlKey) && e.key === "t" && archive) {
+        e.preventDefault(); // Prevent browser's default new tab behavior
         return await CreateTome(archive, newTomeName);
     }
 }
