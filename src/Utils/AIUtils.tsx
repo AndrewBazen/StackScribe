@@ -3,6 +3,7 @@ import { StateEffect, StateField } from "@codemirror/state";
 import { getDb } from "../lib/db";
 import type { Chunk } from "../types/Chunk";
 import type { Finding } from "../types/finding";
+import type { Requirement } from "../types/requirement";
 
 export function chunkMarkdown(markdown: string): Chunk[] {
     const lines = markdown.split('\n');
@@ -27,6 +28,20 @@ export function chunkMarkdown(markdown: string): Chunk[] {
 
     return chunks;
 }
+
+export async function outputRequirements(requirements: Requirement[], editor: EditorView) {
+    editor.dispatch({
+        changes: {
+            from: 0,
+            to: editor.state.doc.length,
+            insert: requirements.map(r => r.title).join('\n')
+        }
+    });
+}
+
+
+
+
 
 
 export function makeDecorations(findings: Finding[]) {

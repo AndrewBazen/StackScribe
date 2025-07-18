@@ -31,6 +31,7 @@ import { aiLinkService, LinkSuggestion } from "./services/aiLinkService";
 import StartupNotification from "./components/StartupNotification";
 import { Extension } from "@codemirror/state";
 import { detectAmbiguity } from "./Utils/detectAmbiguity";
+import { generateRequirements } from "./Utils/generateRequirement";
 
 const DIVIDER_SIZE = 2; // px
 
