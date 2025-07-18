@@ -32,6 +32,7 @@ ENV/
 venv*
 env*
 bin/
+local.settings.json
 
 # Python cache and compiled files
 __pycache__/
@@ -222,3 +223,4 @@ embeddings_cache/
 user_data/
 exports/
 backups/
+local.settings.json
