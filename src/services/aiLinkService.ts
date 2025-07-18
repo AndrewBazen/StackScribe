@@ -41,10 +41,74 @@ interface PythonSuggestion {
 }
 
 class AILinkService {
-  private readonly baseUrl = 'http://localhost:8000';
+  private baseUrl: string = 'http://localhost:8000';
 
   constructor() {
-    // Python AI service configuration
+    this.initializeServiceUrl();
+  }
+
+  private initializeServiceUrl() {
+    // Check if user has Azure sync enabled (indicating they're authenticated)
+    const enableAzureSync = localStorage.getItem('enableAzureSync');
+    const isAzureEnabled = enableAzureSync ? JSON.parse(enableAzureSync) : false;
+    
+    if (isAzureEnabled) {
+      // Use Azure AI service in production
+      this.baseUrl = 'https://stackscribe-ai-service-prod.azurecontainerapps.io';
+      console.log('Using Azure AI Service:', this.baseUrl);
+    } else {
+      // Use local Docker service
+      this.baseUrl = 'http://localhost:8000';
+      console.log('Using local AI Service:', this.baseUrl);
+    }
+  }
+
+  private async tryWithFallback(pythonRequest: PythonSuggestionRequest): Promise<Response> {
+    try {
+      // Try primary service (Azure if authenticated, local otherwise)
+      const response = await fetch(`${this.baseUrl}/api/suggestions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(pythonRequest)
+      });
+
+      if (response.ok) {
+        return response;
+      }
+
+      // If primary service fails and we were trying Azure, fallback to local
+      if (this.baseUrl.includes('azurecontainerapps.io')) {
+        console.warn('Azure AI service unavailable, falling back to local service');
+        return await this.tryLocalService(pythonRequest);
+      }
+
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    } catch (error) {
+      // If Azure service fails, try local service
+      if (this.baseUrl.includes('azurecontainerapps.io')) {
+        console.warn('Azure AI service error, falling back to local service:', error);
+        return await this.tryLocalService(pythonRequest);
+      }
+      throw error;
+    }
+  }
+
+  private async tryLocalService(pythonRequest: PythonSuggestionRequest): Promise<Response> {
+    const localResponse = await fetch('http://localhost:8000/api/suggestions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(pythonRequest)
+    });
+
+    if (!localResponse.ok) {
+      throw new Error(`Local service error: HTTP ${localResponse.status}: ${localResponse.statusText}`);
+    }
+
+    return localResponse;
   }
 
   async getSuggestions(request: AILinkRequest): Promise<AILinkResponse> {
@@ -61,19 +125,8 @@ class AILinkService {
         current_note: currentNote
       };
 
-      // Make HTTP request to Python service
-      const response = await fetch(`${this.baseUrl}/api/suggestions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(pythonRequest)
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
+      // Try primary service first, then fallback
+      const response = await this.tryWithFallback(pythonRequest);
       const pythonSuggestions: PythonSuggestion[] = await response.json();
       
       // Convert Python response to frontend types

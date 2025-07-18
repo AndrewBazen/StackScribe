@@ -1,0 +1,8 @@
+{
+  "build": {
+    "beforeDevCommand": "npm run dev:android",
+    "devUrl": "http://localhost:1423",
+    "beforeBuildCommand": "npm run build:android",
+    "frontendDist": "../dist-mobile"
+  }
+} 

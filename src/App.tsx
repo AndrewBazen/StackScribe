@@ -10,6 +10,7 @@ import StartWindow from "./components/StartWindow";
 import { Archive } from "./types/archive";
 import { FilePlusIcon, GearIcon, ChevronLeftIcon, ChevronRightIcon } from "@radix-ui/react-icons";
 import { AppMenuBar } from "./components/AppMenuBar";
+import { chunkMarkdown, persistClarityFindings, createDecorationExtension } from "./Utils/AIUtils";
 import CustomHeaderBar from "./components/CustomHeaderBar";
 import { 
    CreateTome, CreateEntry, saveLocalEntry, saveAllEntries, exitApp,
@@ -27,6 +28,10 @@ import logo from "../src-tauri/icons/icon.png";
 import Preferences from "./components/Preferences";
 import AILinkSuggestions from "./components/AILinkSuggestions";
 import { aiLinkService, LinkSuggestion } from "./services/aiLinkService";
+import StartupNotification from "./components/StartupNotification";
+import { Extension } from "@codemirror/state";
+import { detectAmbiguity } from "./Utils/detectAmbiguity";
+import { generateRequirements } from "./Utils/generateRequirement";
 
 const DIVIDER_SIZE = 2; // px
 
@@ -70,7 +75,8 @@ function App() {
   const [showAISuggestions, setShowAISuggestions] = useState<boolean>(false);
   // Track initialization to prevent multiple sync operations
   const isInitialized = useRef<boolean>(false);
-
+  // Decorations for requirement clarity
+  const [decorations, setDecorations] = useState<Extension[]>([]);
   // open an archive
   const handleArchiveOpen = async (selectedArchive: Archive) => {
     // Prevent archive opening if sync is not ready
@@ -118,7 +124,7 @@ function App() {
     setTome(createdTome);
     
     // Create a default untitled entry in the new tome
-    const createdEntry = await CreateEntry(createdTome, "Untitled Entry");
+    const createdEntry = await CreateEntry(createdTome, "Untitled Entry", "generic");
     if (!createdEntry) {
       console.error("Failed to create entry: Untitled_Entry.md")
     }
@@ -267,7 +273,7 @@ function App() {
        setTomes([...tomes, newTome]);
        setTome(newTome);
       // Automatically create a default entry in the new tome
-      const defaultEntry = await CreateEntry(newTome, "Untitled Entry");
+      const defaultEntry = await CreateEntry(newTome, "Untitled Entry", "generic");
       setEntries([defaultEntry]);
       setEntry(defaultEntry);
       setTabbedEntries([...tabbedEntries, defaultEntry]);
@@ -276,10 +282,10 @@ function App() {
     }
   };
 
-  const handleNewEntry = async (newEntryName: string) => {
+  const handleNewEntry = async (newEntryName: string, entry_type: "generic" | "requirement" | "specification" | "meeting" | "design" | "implementation" | "test" | "other") => {
     //
     if (tome && !entries.some(e => e.name === newEntryName)) {
-      const newEntry = await CreateEntry(tome, newEntryName);
+      const newEntry = await CreateEntry(tome, newEntryName, entry_type);
        setEntries([...entries, newEntry]);
        setEntry(newEntry);
        handleCreateTab(newEntry);
@@ -371,6 +377,26 @@ function App() {
     }
   };
 
+  // Run clarity analysis on an entry
+  async function runClarityAnalysis(entry: Entry) {
+    console.log("🔍 Running clarity analysis for entry:", entry.name, "type:", entry.entry_type);
+    if (!entry.content.trim() || entry.entry_type !== 'requirement') {
+      console.log("Clarity analysis not supported for non-requirement entries");
+      setDecorations([]); // Clear decorations for non-requirement entries
+      return;
+    }
+    const chunks = chunkMarkdown(entry.content);
+    console.log("📄 Chunks:", chunks);
+    console.log("📝 Original content:", entry.content);
+    const findings = await detectAmbiguity(chunks);
+    console.log("🔍 Findings:", findings);
+    await persistClarityFindings(entry.id, chunks, findings);
+    const decorationExtensions = createDecorationExtension(findings);
+    console.log("🎨 Decoration extensions:", decorationExtensions);
+    setDecorations(decorationExtensions);
+  }
+
+  // Apply an AI suggestion to the current entry
   const handleApplyAISuggestion = (suggestion: LinkSuggestion) => {
     if (!entry) return;
     
@@ -401,12 +427,14 @@ function App() {
     );
   };
 
+  // Dismiss an AI suggestion
   const handleDismissAISuggestion = (suggestion: LinkSuggestion) => {
     setAiSuggestions(prev => 
       prev.filter(s => s.targetEntryId !== suggestion.targetEntryId)
     );
   };
 
+  // Toggle AI suggestions
   const toggleAISuggestions = () => {
     setShowAISuggestions(!showAISuggestions);
     if (!showAISuggestions && aiSuggestions.length === 0) {
@@ -414,14 +442,17 @@ function App() {
     }
   };
 
+  // Show the entry prompt
   const handleShowEntryPrompt = (show: boolean) => {
     setShowEntryPrompt(show);
   }
 
+  // Show the tome prompt
   const handleShowTomePrompt = (show: boolean) => {
     setShowTomePrompt(show);
   };
 
+  // Rename an entry
   const handleRenameEntry = async (entry: Entry) => {
     const newName = prompt("New entry name", entry.name);
     if (!newName || newName === entry.name) return;
@@ -431,6 +462,7 @@ function App() {
     setEntries([...entries]);          // refresh list
   };
 
+  // Delete an entry
   const handleDeleteEntry = async (entry: Entry) => {
     if (confirm(`Delete "${entry.name}"?`)) {
       await saveEntry(entry); // Assuming deleteEntry is a function that saves the updated entry
@@ -552,6 +584,15 @@ function App() {
     fetchArchives();
   }, [syncStatus.isReady]);
 
+  useEffect(() => {
+    if (entry) {
+      runClarityAnalysis(entry);
+    } else {
+      // Clear decorations when no entry is selected
+      setDecorations([]);
+    }
+  }, [entry]);
+
 
   useEffect(() => {
     const handleMove = (e: MouseEvent) => {
@@ -573,6 +614,9 @@ function App() {
 
   return (
     <>
+    {/* STARTUP NOTIFICATION */}
+    <StartupNotification />
+
     {/* Initialize the app on first load */}
     {/* This will set up the database and sync data from the server */}
 
@@ -589,7 +633,7 @@ function App() {
     />}
 
     {/* NAME PROMPT */}
-    {ShowEntryPrompt && <NamePrompt title="New Entry"  label="Entry Name" placeholder="Enter a name for the new entry" onClose={handleShowEntryPrompt} onConfirm={(name: string) => { handleNewEntry(name); handleShowEntryPrompt(false); }} />}
+    {ShowEntryPrompt && <NamePrompt title="New Entry"  label="Entry Name" placeholder="Enter a name for the new entry" onClose={handleShowEntryPrompt} onConfirm={(name: string, entry_type: string) => { handleNewEntry(name, entry_type as "generic" | "requirement" | "specification" | "meeting" | "design" | "implementation" | "test" | "other"); handleShowEntryPrompt(false); }} />}
     {ShowTomePrompt && <NamePrompt title="New Tome" label="Tome Name" placeholder="Enter a name for the new tome" onClose={handleShowTomePrompt} onConfirm={(name: string) => {handleNewTome(name); handleShowTomePrompt(false)}} />}
 
     {/* START WINDOW */}
@@ -675,6 +719,7 @@ function App() {
                 onEntryChange={(content: string) => {
                   handleEntryChanged(content);
                 }}
+                decorations={decorations}
               />
             ))
         ) : (

@@ -5,12 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
     "functions:start": "cd stackscribe-functions && npm start",
     "functions:build": "cd stackscribe-functions && npm run build",
-    "functions:deploy": "cd stackscribe-functions && npm run deploy"
+    "functions:deploy": "cd stackscribe-functions && npm run deploy",
+    "dev:android": "vite --config vite.mobile.ts",
+    "build:android": "vite build --config vite.mobile.ts"
   },
   "dependencies": {
     "@azure/msal-browser": "^4.14.0",
@@ -64,7 +67,7 @@
     "turndown": "^7.2.0"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2",
+    "@tauri-apps/cli": "^2.6.2",
     "@types/react": "^18.3.1",
     "@types/react-dom": "^18.3.1",
     "@types/sql.js": "^1.4.9",

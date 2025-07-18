@@ -9,6 +9,54 @@
 
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <!--
+      At runtime we detect the platform family exposed by the Tauri CLI.
+      • desktop  → load the regular desktop bundle (src/main.tsx)
+      • mobile   → load the mobile-specific bundle   (src/mobile/main.tsx)
+    -->
+    <script type="module">
+      // Debug: log environment variables
+      console.log('TAURI_FAMILY:', import.meta.env.TAURI_FAMILY);
+      console.log('TAURI_PLATFORM:', import.meta.env.TAURI_PLATFORM);
+      console.log('User Agent:', navigator.userAgent);
+      console.log('window.__TAURI__:', !!window.__TAURI__);
+      
+      // Multiple detection methods
+      const isMobileEnv = import.meta.env.TAURI_FAMILY === 'mobile' || 
+                         import.meta.env.TAURI_PLATFORM === 'android' || 
+                         import.meta.env.TAURI_PLATFORM === 'ios';
+      
+      const isMobileUA = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+      
+      // For mobile: use env vars first, then UA detection in Tauri context
+      // For desktop: only use Tauri when __TAURI__ is available and UA is not mobile
+      const isMobile = isMobileEnv || isMobileUA;
+      const isDesktop = !isMobile;
+      
+      console.log('Detection results:', {
+        isMobileEnv,
+        isMobileUA,
+        isMobile,
+        isDesktop,
+        hasTauri: !!window.__TAURI__
+      });
+      
+      if (isMobile) {
+        console.log('Loading mobile UI...');
+        import('/src/mobile/main.tsx').catch(err => {
+          console.error('Failed to load mobile UI:', err);
+          console.log('Falling back to desktop UI...');
+          import('/src/main.tsx');
+        });
+      } else if (isDesktop) {
+        console.log('Loading desktop UI...');
+        import('/src/main.tsx').catch(err => {
+          console.error('Failed to load desktop UI:', err);
+        });
+      } else {
+        console.error('Could not determine platform, defaulting to desktop');
+        import('/src/main.tsx');
+      }
+    </script>
   </body>
 </html>

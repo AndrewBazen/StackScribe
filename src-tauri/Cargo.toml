@@ -26,7 +26,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1", features = ["v4"] }
 tauri-plugin-sql = { version = "2.2.1", features = ["sqlite"] }
-sqlx = "0.8.6"
+sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "sqlite"], default-features = false }
 # AI/ML dependencies (lightweight alternatives)
 # Note: candle deps commented out for now - can be added later for advanced models
 # candle-core = "0.6.0"
@@ -40,7 +40,7 @@ unicode-segmentation = "1.10.1"
 # Utilities
 chrono = { version = "0.4.38", features = ["serde"] }
 tokio = { version = "1.40.0", features = ["full"] }
-reqwest = { version = "0.11.22", features = ["json"] }
+reqwest = { version = "0.11.22", features = ["json", "rustls-tls"], default-features = false }
 
 [features]
 default = ["local-ai"]

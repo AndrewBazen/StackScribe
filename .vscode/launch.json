@@ -2,12 +2,29 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Attach to Node Functions",
+            "name": "Debug Android App",
             "type": "node",
-            "request": "attach",
-            "restart": true,
-            "port": 9229,
-            "preLaunchTask": "func: host start"
+            "request": "launch",
+            "program": "${workspaceFolder}/node_modules/@tauri-apps/cli/bin/tauri.js",
+            "args": ["android", "dev"],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "ANDROID_HOME": "${env:ANDROID_HOME}"
+            },
+            "preLaunchTask": "tauri:android"
+        },
+        {
+            "name": "Build Android APK",
+            "type": "node",
+            "request": "launch",
+            "program": "${workspaceFolder}/node_modules/@tauri-apps/cli/bin/tauri.js",
+            "args": ["android", "build"],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "ANDROID_HOME": "${env:ANDROID_HOME}"
+            }
         }
     ]
 }

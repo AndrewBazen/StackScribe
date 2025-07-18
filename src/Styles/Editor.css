@@ -61,3 +61,61 @@ line-height: 1.5;
     font-family: inherit !important;
     font-size: inherit !important;
 }
+
+/* AI clarity analysis decorations */
+.ambiguous-phrase {
+    background-color: rgba(255, 165, 0, 0.2);
+    border-bottom: 2px wavy orange;
+    cursor: help;
+}
+
+/* Generated Requirements Styling */
+.requirements-loading {
+    color: #94a3b8;
+    font-style: italic;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
+}
+
+/* Highlight requirements sections */
+.cm-line:has-text("## Generated Requirements") {
+    color: #4a9eff !important;
+    font-weight: bold !important;
+}
+
+.cm-line:has-text("### ") {
+    color: #7dd3fc !important;
+    font-weight: 600 !important;
+}
+
+.cm-line:has-text("**Description:**") {
+    color: #a3e635 !important;
+}
+
+.cm-line:has-text("**Acceptance Criteria:**") {
+    color: #fbbf24 !important;
+}
+
+.cm-line:has-text("**Non-Functional Requirements:**") {
+    color: #f472b6 !important;
+}
+
+.cm-line:has-text("**Constraints:**") {
+    color: #fb7185 !important;
+}
+
+.cm-line:has-text("**Dependencies:**") {
+    color: #c084fc !important;
+}
+
+.cm-line:has-text("**Risks:**") {
+    color: #f87171 !important;
+}
+
+.cm-line:has-text("**Assumptions:**") {
+    color: #34d399 !important;
+}

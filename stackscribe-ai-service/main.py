@@ -1,25 +1,67 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Tuple
 from sentence_transformers import SentenceTransformer, CrossEncoder
 from qdrant_client import QdrantClient, models
 import pathlib
 import heuristics
+import os
 
 # ---------- Global config ----------
-THRESHOLD   = 0.05
-TOP_K       = 8
-COLLECTION  = "note_chunks"
-EMBED_MODEL = "nomic-ai/nomic-embed-text-v1"
-RERANKER_ID = "BAAI/bge-reranker-base"     # Cross-encoder
+THRESHOLD   = float(os.getenv("THRESHOLD", "0.05"))
+TOP_K       = int(os.getenv("TOP_K", "8"))
+COLLECTION  = os.getenv("COLLECTION", "note_chunks")
+EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-ai/nomic-embed-text-v1")
+RERANKER_ID = os.getenv("RERANKER_ID", "BAAI/bge-reranker-base")
+
+# Qdrant connection config
+QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
+QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
 
 # ---------- Heavy objects (load once) ----------
 embedder  = SentenceTransformer(EMBED_MODEL, trust_remote_code=True)
 reranker  = CrossEncoder(RERANKER_ID)
-client    = QdrantClient(host="localhost", port=6333)
+client    = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
 
 # ---------- FastAPI app ----------
 app = FastAPI(title="StackScribe AI Link Service")
+
+# Add CORS middleware to allow requests from Tauri app and web clients
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:1420", "https://tauri.localhost", "tauri://localhost", "*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+)
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize collection on FastAPI startup"""
+    await ensure_collection_exists()
+
+# ---------- Initialize collection ----------
+async def ensure_collection_exists():
+    """Ensure the note_chunks collection exists in Qdrant"""
+    try:
+        # Try to get collection info
+        client.get_collection(COLLECTION)
+        print(f"✅ Collection '{COLLECTION}' already exists")
+    except Exception as e:
+        print(f"📝 Creating collection '{COLLECTION}'...")
+        try:
+            # Create collection with appropriate vector size (nomic-embed-text-v1 uses 768 dimensions)
+            client.create_collection(
+                collection_name=COLLECTION,
+                vectors_config=models.VectorParams(
+                    size=768,  # nomic-embed-text-v1 embedding size
+                    distance=models.Distance.COSINE
+                )
+            )
+            print(f"✅ Collection '{COLLECTION}' created successfully")
+        except Exception as create_error:
+            print(f"❌ Failed to create collection: {create_error}")
 
 class LinkSuggestionRequest(BaseModel):
     text: str
@@ -87,18 +129,22 @@ def suggest_links(para: str, current_note: str) -> list[tuple[str, float]]:
     Return up to TOP_K suggested notes for inline linking.
     Each tuple = (note_filename, reranked_score)
     """
-    q_vec = _vector(para, is_query=True)
+    try:
+        q_vec = _vector(para, is_query=True)
 
-    # ----- 1. vector search (fast) -----
-    hits = client.search(
-        collection_name=COLLECTION,
-        query_vector=q_vec,
-        limit=TOP_K * 5,           # over-fetch; we'll rerank & trim
-        with_payload=True,
-    )
+        # ----- 1. vector search (fast) -----
+        hits = client.search(
+            collection_name=COLLECTION,
+            query_vector=q_vec,
+            limit=TOP_K * 5,           # over-fetch; we'll rerank & trim
+            with_payload=True,
+        )
 
-    if not hits:
-        return []
+        if not hits:
+            return []
+    except Exception as e:
+        print(f"⚠️ Search failed: {e}")
+        return []  # Return empty list if search fails
 
     # ----- 2. cross-encoder rerank -----
     pairs   = [(para, h.payload["text"]) for h in hits]
@@ -134,10 +180,49 @@ def suggest_links(para: str, current_note: str) -> list[tuple[str, float]]:
 async def health_check():
     """Health check endpoint"""
     try:
-        # Test Qdrant connection
-        client.get_collection(COLLECTION)
-        return {"status": "healthy", "qdrant": "connected"}
+        # Test basic Qdrant connection
+        response = client.get_collections()
+        
+        # Check if our collection exists
+        collection_exists = False
+        points_count = 0
+        
+        collections = response.collections if hasattr(response, 'collections') else []
+        for collection in collections:
+            if collection.name == COLLECTION:
+                collection_exists = True
+                try:
+                    # Try to get collection info
+                    collection_info = client.get_collection(COLLECTION)
+                    points_count = collection_info.points_count if hasattr(collection_info, 'points_count') else 0
+                except Exception:
+                    # If we can't get detailed info, that's okay
+                    points_count = "unknown"
+                break
+        
+        return {
+            "status": "healthy", 
+            "qdrant": "connected",
+            "collection": COLLECTION,
+            "collection_exists": collection_exists,
+            "points_count": points_count
+        }
     except Exception as e:
+        # Try simpler health check
+        try:
+            # Just check if we can reach Qdrant at all
+            import requests
+            response = requests.get(f"http://{QDRANT_HOST}:{QDRANT_PORT}/")
+            if response.status_code == 200:
+                return {
+                    "status": "healthy",
+                    "qdrant": "connected (basic)",
+                    "collection": COLLECTION,
+                    "note": "Detailed collection info unavailable due to API version mismatch"
+                }
+        except Exception:
+            pass
+            
         return {"status": "unhealthy", "error": str(e)}
 
 @app.post("/api/suggestions", response_model=List[LinkSuggestion])
@@ -154,9 +239,14 @@ async def get_suggestions(request: LinkSuggestionRequest):
                 reasoning=f"Vector similarity + cross-encoder reranking + heuristics (score: {score:.3f})"
             ))
         
+        # If no suggestions found, return helpful message
+        if not result:
+            print(f"🔍 No suggestions found for text: '{request.text[:50]}...'")
+        
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"❌ Error in get_suggestions: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get suggestions: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
