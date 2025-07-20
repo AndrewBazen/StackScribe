@@ -238,14 +238,30 @@ async fn python_service_status() -> Result<serde_json::Value, String> {
 
 // --------- stripe api ---------
 
+// Stripe functionality temporarily disabled
+/*
 #[tauri::command]
 async fn create_checkout_session_tauri(user_id: String) -> Result<String, String> {
+    use std::sync::Arc;
+    use stripe::Client;
+    use stripe_api::{AppState, CheckoutRequest, CheckoutResponse};
+    use axum::{extract::State, Json};
+    
     let stripe_key = std::env::var("STRIPE_SECRET_KEY").map_err(|e| e.to_string())?;
     let client = Client::new(stripe_key);
     let app_state = Arc::new(AppState { stripe: client });
-    let checkout_url = create_checkout_session(app_state, user_id).await?;
-    Ok(checkout_url)
+    
+    // Create the request payload
+    let request = CheckoutRequest { user_id };
+    
+    // Call the function with proper axum types
+    let state = State(app_state);
+    let json_request = Json(request);
+    
+    let response = stripe_api::create_checkout_session(state, json_request).await?;
+    Ok(response.0.checkout_url)
 }
+*/
 
 
 
@@ -255,6 +271,8 @@ async fn create_checkout_session_tauri(user_id: String) -> Result<String, String
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
 
+    // Stripe temporarily disabled
+    /*
     const enable_stripe: bool = true;
 
     if enable_stripe {
@@ -269,6 +287,7 @@ pub fn run() {
         let stripe_client = Client::new(stripe_key);
         let app_state = Arc::new(AppState { stripe: stripe_client });
     }
+    */
 
 
     // Embed the migration SQL at compile-time so it’s always available, even on mobile
@@ -341,7 +360,7 @@ pub fn run() {
             stop_python_service,
             python_service_status,
             startup_ai_service,
-            create_checkout_session_tauri,
+            // create_checkout_session_tauri,  // Stripe temporarily disabled
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

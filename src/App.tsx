@@ -9,22 +9,20 @@ import { Tome } from "./types/tome";
 import StartWindow from "./components/StartWindow";
 import { Archive } from "./types/archive";
 import { FilePlusIcon, GearIcon, ChevronLeftIcon, ChevronRightIcon } from "@radix-ui/react-icons";
-import { AppMenuBar } from "./components/AppMenuBar";
 import { chunkMarkdown, persistClarityFindings, createDecorationExtension } from "./Utils/AIUtils";
 import CustomHeaderBar from "./components/CustomHeaderBar";
+import NewEntryPrompt from "./components/NewEntryPrompt";
+import NewTomePrompt from "./components/NewTomePrompt";
 import { 
    CreateTome, CreateEntry, saveLocalEntry, saveAllEntries, exitApp,
-   SaveShortcut,
    OpenArchive, CreateArchive,
    GetArchives,
    } from "./Utils/AppUtils";
 import PreviewPanel from "./components/PreviewPanel";
-import NamePrompt from "./components/NamePrompt";
 import { getSyncManager, SyncStatus } from "./lib/sync";
 import { getDb } from "./lib/db";
 import { getTomesByArchiveId, saveEntry, getEntriesByTomeId, deleteEntry } from "./stores/dataStore";
 import TabBar from "./components/TabBar";
-import { Window } from "@tauri-apps/api/window";
 import logo from "../src-tauri/icons/icon.png";
 import Preferences from "./components/Preferences";
 import AILinkSuggestions from "./components/AILinkSuggestions";
@@ -52,9 +50,7 @@ function App() {
   const [dirtyEntries, setDirtyEntries] = useState<Entry[]>([]);
   const [ShowEntryPrompt, setShowEntryPrompt] = useState<boolean>(false);
   const [ShowTomePrompt, setShowTomePrompt] = useState<boolean>(false);
-  const [ShowRenamePrompt, setShowRenamePrompt] = useState<boolean>(false);
   const [entryToRename, setEntryToRename] = useState<Entry | null>(null);
-  const [ShowDeleteConfirm, setShowDeleteConfirm] = useState<boolean>(false);
   const [entryToDelete, setEntryToDelete] = useState<Entry | null>(null);
   const [tabbedEntries, setTabbedEntries] = useState<Entry[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
@@ -71,7 +67,7 @@ function App() {
   const [showPreferences, setShowPreferences] = useState<boolean>(false);
   // Azure Sync preference (persisted in localStorage)
   const [enableAzureSync, setEnableAzureSync] = useState<boolean>(() => {
-    const stored = localStorage.getItem('enableAzureSync');
+  const stored = localStorage.getItem('enableAzureSync');
     return stored ? JSON.parse(stored) : false;
   });
   // AI Link suggestions state
@@ -464,7 +460,6 @@ function App() {
   // Rename an entry
   const handleRenameEntry = async (entry: Entry) => {
     setEntryToRename(entry);
-    setShowRenamePrompt(true);
   };
 
   const handleRenameConfirm = async (newName: string) => {
@@ -493,7 +488,6 @@ function App() {
       setEntry(updatedEntry);
     }
     
-    setShowRenamePrompt(false);
     setEntryToRename(null);
     
     console.log(`Entry renamed to "${newName}" and saved successfully`);
@@ -502,7 +496,6 @@ function App() {
   // Delete an entry
   const handleDeleteEntry = async (entry: Entry) => {
     setEntryToDelete(entry);
-    setShowDeleteConfirm(true);
   };
 
   const handleDeleteConfirm = async () => {
@@ -515,7 +508,6 @@ function App() {
       setEntry(tabbedEntries[0] || null);
       setMarkdown(tabbedEntries[0]?.content || "");
     }
-    setShowDeleteConfirm(false);
     setEntryToDelete(null);
   };
 
@@ -688,21 +680,9 @@ function App() {
     />}
 
     {/* NAME PROMPT */}
-    {ShowEntryPrompt && <NamePrompt title="New Entry"  label="Entry Name" placeholder="Enter a name for the new entry" onClose={handleShowEntryPrompt} onConfirm={(name: string, entry_type: string) => { handleNewEntry(name, entry_type as "generic" | "requirement" | "specification" | "meeting" | "design" | "implementation" | "test" | "other"); handleShowEntryPrompt(false); }} />}
-    {ShowTomePrompt && <NamePrompt title="New Tome" label="Tome Name" placeholder="Enter a name for the new tome" onClose={handleShowTomePrompt} onConfirm={(name: string) => {handleNewTome(name); handleShowTomePrompt(false)}} />}
-    {ShowRenamePrompt && entryToRename && <NamePrompt title="Rename Entry" label="Entry Name" placeholder="Enter a new name for the entry" onClose={() => setShowRenamePrompt(false)} onConfirm={(name: string) => {handleRenameConfirm(name); setShowRenamePrompt(false)}} />}
-    {ShowDeleteConfirm && entryToDelete && (
-      <div className="modal-overlay">
-        <div className="modal-content">
-          <h3>Delete Entry</h3>
-          <p>Are you sure you want to delete "{entryToDelete.name}"?</p>
-          <div className="modal-buttons">
-            <button onClick={() => setShowDeleteConfirm(false)}>Cancel</button>
-            <button onClick={handleDeleteConfirm} className="delete-button">Delete</button>
-          </div>
-        </div>
-      </div>
-    )}
+    {ShowEntryPrompt && <NewEntryPrompt title="New Entry"  label="Entry Name" placeholder="Enter a name for the new entry" onClose={handleShowEntryPrompt} onConfirm={(name: string, entry_type: string) => { handleNewEntry(name, entry_type as "generic" | "requirement" | "specification" | "meeting" | "design" | "implementation" | "test" | "other"); handleShowEntryPrompt(false); }} />}
+    {ShowTomePrompt && <NewTomePrompt title="New Tome" label="Tome Name" placeholder="Enter a name for the new tome" onClose={handleShowTomePrompt} onConfirm={(name: string) => {handleNewTome(name); handleShowTomePrompt(false)}} />}
+  
 
     {/* START WINDOW */}
     <StartWindow 

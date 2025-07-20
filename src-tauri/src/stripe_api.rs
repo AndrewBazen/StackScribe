@@ -1,14 +1,16 @@
+// Stripe functionality temporarily disabled
+/*
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use axum::{extract::State, Json};
 use stripe::{
-    api_key,
     Client,
-    CreatePaymentIntentParams,
-    PaymentIntent,
-    PaymentIntentStatus,
-    PaymentMethod,
-    PaymentMethodType,
+    CreateCheckoutSession,
+    CheckoutSession,
+    CheckoutSessionMode,
+    CreateCheckoutSessionLineItems,
+    CreateCheckoutSessionLineItemsPriceData,
+    Currency,
 };
 
 #[derive(Clone)]
@@ -36,16 +38,15 @@ pub async fn create_checkout_session(
     params.success_url = Some("https://example.com/success".to_string());
     params.cancel_url = Some("https://example.com/cancel".to_string());
     
-
     // Example: add a subscription price
-    let mut line_item = CreateCheckoutSessionLineItems::new();
-    let mut price_data = CreateCheckoutSessionLineItemsPriceData::new();
-    price_data.price = Some("price_1234567890abcdef".to_string());
-    line_item.price_data = Some(price_data);
-    line_item.quantity = Some(1);
+    let line_item = CreateCheckoutSessionLineItems {
+        price: Some("price_1234567890abcdef".to_string()),
+        quantity: Some(1),
+        ..Default::default()
+    };
     params.line_items = Some(vec![line_item]);
     
-    let session = stripe::CheckoutSession::create(&state.stripe, params)
+    let session = CheckoutSession::create(&state.stripe, params)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -53,3 +54,4 @@ pub async fn create_checkout_session(
         checkout_url: session.url.ok_or("No URL returned from Stripe")?,
     }))
 }
+*/

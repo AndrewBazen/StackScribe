@@ -351,6 +351,8 @@ button:active {
 
 .entry-view-panel {
   background-color: #181818;
+  width: 200px;
+  height: 100vh;
   border-right: 1px solid #333;
 }
 
@@ -368,6 +370,7 @@ button:active {
 
 .entry-item {
   display: flex;
+  margin-top: 5px;
   flex-direction: column;
   justify-content: flex-start;
   align-items: flex-start;
@@ -394,7 +397,7 @@ button:active {
   flex-direction: row;
   justify-content: flex-start;
   align-items: flex-start;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   color: #f0f0f0;
   text-align: left;
@@ -542,3 +545,16 @@ button:active {
 }
 
 
+.popover-content  { 
+  position: absolute;
+  right: 30px;
+  bottom: 35px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: flex-start;
+  background: #212121; 
+}
+
+
+.destructive      { background: #ef4444; color: #fff; }
