@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AppMenuBar } from './AppMenuBar';
 import { NavIconButton } from './NavIconButton';
 import { 
@@ -12,6 +12,9 @@ import {
   ReaderIcon,
   LightningBoltIcon
 } from '@radix-ui/react-icons';
+import { useEntrySearch } from '../hooks/useEntrySearch';
+import { Entry } from '../types/entry';
+import ResultsPane from './ResultsPane';
 
 interface CustomHeaderBarProps {
   onCreateArchive: () => void;
@@ -22,11 +25,13 @@ interface CustomHeaderBarProps {
   onSaveAll: () => void;
   onClose: () => void;
   onPreferences: () => void;
-  onSearch: (query: string) => void;
+  onSearch: (results: Entry[]) => void;
+  onSearchResultClick?: (entry: Entry) => void;
   panelsVisible: boolean;
   onTogglePanels: () => void;
   onToggleAI: () => void;
   aiActive?: boolean;
+  entries: Entry[]; // Add entries prop
 }
 
 export default function CustomHeaderBar({
@@ -39,23 +44,28 @@ export default function CustomHeaderBar({
   onClose,
   onPreferences,
   onSearch,
+  onSearchResultClick,
   panelsVisible,
   onTogglePanels,
   onToggleAI,
-  aiActive = false
+  aiActive = false,
+  entries
 }: CustomHeaderBarProps) {
   const [searchQuery, setSearchQuery] = useState('');
+  const searchResults = useEntrySearch(searchQuery, entries);
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const query = e.target.value;
     setSearchQuery(query);
-    onSearch(query);
+    onSearch(searchResults);
   };
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSearch(searchQuery);
+    onSearch(searchResults);
   };
+
+  useEffect(() => onSearch && onSearch(searchResults), [searchResults, onSearch]);
 
   return (
     <div className="custom-header-bar">
@@ -94,6 +104,13 @@ export default function CustomHeaderBar({
             />
           </div>
         </form>
+        {/* Search results dropdown */}
+        <ResultsPane 
+          results={searchResults} 
+          onResultClick={(entry: Entry) => {
+            onSearchResultClick?.(entry);
+          }}
+        />
       </div>
 
       {/* Right section: Action buttons */}

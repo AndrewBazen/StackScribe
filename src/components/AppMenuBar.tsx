@@ -30,7 +30,7 @@ export function AppMenuBar({ onCreateArchive, onSwitchArchive, onNewTome, onNewE
     }
 
 return (
-    <MenuBar.Root>
+    <MenuBar.Root style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '60px' }}>
             <MenuBar.Menu>
             <MenuBar.Trigger className="menubar-trigger">File</MenuBar.Trigger>
             <MenuBar.Portal>

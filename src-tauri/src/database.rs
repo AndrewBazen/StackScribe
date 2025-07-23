@@ -53,7 +53,7 @@ impl Database {
                 id INTEGER PRIMARY KEY,
                 version INTEGER NOT NULL,
                 description TEXT NOT NULL,
-                applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                applied_at TEXT DEFAULT (datetime('now'))
             )",
             []
         )?;
@@ -146,7 +146,7 @@ impl Database {
         )?;
         Ok(())
     }
-    
+
     // Tome operations
     pub fn get_tomes_by_archive_id(&self, archive_id: &str) -> Result<Vec<Tome>> {
         let mut stmt = self.conn.prepare(

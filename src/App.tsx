@@ -1,256 +1,279 @@
 import "./Styles/App.css";
 import { MdEditor } from "./components/MpEditor";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { NavIconButton } from "./components/NavIconButton";
+import { useAppState } from "./hooks/useAppState";
 import EntryView from "./components/EntryView";
 import { Entry } from "./types/entry";
 import ArchiveTree from "./components/ArchiveTree";
 import { Tome } from "./types/tome";  
 import StartWindow from "./components/StartWindow";
 import { Archive } from "./types/archive";
-import { FilePlusIcon, GearIcon, ChevronLeftIcon, ChevronRightIcon } from "@radix-ui/react-icons";
 import { chunkMarkdown, persistClarityFindings, createDecorationExtension } from "./Utils/AIUtils";
 import CustomHeaderBar from "./components/CustomHeaderBar";
 import NewEntryPrompt from "./components/NewEntryPrompt";
 import NewTomePrompt from "./components/NewTomePrompt";
 import { exitApp } from "./Utils/AppUtils";
 import PreviewPanel from "./components/PreviewPanel";
-import { getSyncManager, SyncStatus } from "./lib/sync";
 import { 
-  initDatabase, testDatabase,
-  getAllArchives, getArchiveById, saveArchive, createArchive,
+  getAllArchives, saveArchive, createArchive,
   getTomesByArchiveId, saveTome, createTome,
   getEntriesByTomeId, saveEntry, createEntry, deleteEntry,
-  bulkSaveArchives, bulkSaveTomes, bulkSaveEntries, clearAllData
+  bulkSaveEntries, testDatabase
 } from "./services/rustDatabaseService";
 import TabBar from "./components/TabBar";
 import logo from "../src-tauri/icons/icon.png";
 import Preferences from "./components/Preferences";
+import { FilePlusIcon, GearIcon, ChevronLeftIcon, ChevronRightIcon } from "@radix-ui/react-icons";
 import AILinkSuggestions from "./components/AILinkSuggestions";
 import { aiLinkService, LinkSuggestion } from "./services/aiLinkService";
 import StartupNotification from "./components/StartupNotification";
-import { Extension } from "@codemirror/state";
 import { detectAmbiguity } from "./Utils/detectAmbiguity";
-import { generateRequirements } from "./Utils/generateRequirement";
+
 
 const DIVIDER_SIZE = 2; // px
 
-type DragTarget = null | "left" | "right";
-
 function App() {
-  const [leftWidth, setLeftWidth] = useState(200);   // side panel
-  const [rightWidth, setRightWidth] = useState(300); // preview panel
-  const [dragging, setDragging] = useState<DragTarget>(null);
-  const [markdown, setMarkdown] = useState("# Hello, World!\n\n*Write some markdown...*");
-  const [entries, setEntries] = useState<Entry[]>([]);
-  const [tome, setTome] = useState<Tome | null>(null);
-  const [tomes, setTomes] = useState<Tome[]>([]);
-  const [entry, setEntry] = useState<Entry | null>(null);
-  const [archive, setArchive] = useState<Archive | null>(null);
-  const [archives, setArchives] = useState<Archive[]>([]);
-  const [dirtyEntries, setDirtyEntries] = useState<Entry[]>([]);
-  const [ShowEntryPrompt, setShowEntryPrompt] = useState<boolean>(false);
-  const [ShowTomePrompt, setShowTomePrompt] = useState<boolean>(false);
-  const [entryToRename, setEntryToRename] = useState<Entry | null>(null);
-  const [entryToDelete, setEntryToDelete] = useState<Entry | null>(null);
-  const [tabbedEntries, setTabbedEntries] = useState<Entry[]>([]);
-  const [activeTabId, setActiveTabId] = useState<string | null>(null);
-  const [panelsVisible, setPanelsVisible] = useState<boolean>(true);
-  const [syncStatus, setSyncStatus] = useState<SyncStatus>({
-    isInitializing: false,
-    isSyncing: false,
-    isReady: false,
-    error: null
-  });
-  const [preview, setPreview] = useState<boolean>(false);
-  const [themes, setThemes] = useState<{ [key: string]: string }>({});
-  const [plugins, setPlugins] = useState<{ [key: string]: string }>({});
-  const [showPreferences, setShowPreferences] = useState<boolean>(false);
-  // Azure Sync preference (persisted in localStorage)
-  const [enableAzureSync, setEnableAzureSync] = useState<boolean>(() => {
-    const stored = localStorage.getItem('enableAzureSync');
-    return stored ? JSON.parse(stored) : false;
-  });
-  // AI Link suggestions state
-  const [aiSuggestions, setAiSuggestions] = useState<LinkSuggestion[]>([]);
-  const [isLoadingAI, setIsLoadingAI] = useState<boolean>(false);
-  const [showAISuggestions, setShowAISuggestions] = useState<boolean>(false);
-  // Track initialization to prevent multiple sync operations
-  const isInitialized = useRef<boolean>(false);
-  // Decorations for requirement clarity
-  const [decorations, setDecorations] = useState<Extension[]>([]);
+  const {
+    ui, app, data, modals, ai,
+    updateUI, updateApp, updateData, updateModals, updateAI,
+    addDirtyEntry, removeDirtyEntry, clearDirtyEntries,
+    addTabbedEntry, removeTabbedEntry, setActiveTab,
+    setSearchResults, searchResults
+  } = useAppState();
+
+  // Debug logging for editor state
+  useEffect(() => {
+    console.log("🔍 Editor state - activeTabId:", data.activeTabId, "tabbedEntries:", data.tabbedEntries.length);
+  }, [data.activeTabId, data.tabbedEntries.length]);
+
+  // Ensure active tab content is loaded when activeTabId changes
+  useEffect(() => {
+    if (data.activeTabId) {
+      const activeEntry = data.tabbedEntries.find(e => e.id === data.activeTabId);
+      if (activeEntry && activeEntry.id !== data.openEntry?.id) {
+        console.log("🔍 Syncing active tab content:", activeEntry.name);
+        updateData({ openEntry: activeEntry });
+        updateApp({ markdown: activeEntry.content ?? "" });
+      }
+    }
+  }, [data.activeTabId, data.tabbedEntries]);
 
   // open an archive
   const handleArchiveOpen = async (selectedArchive: Archive) => {
     // Prevent archive opening if sync is not ready
-    if (!syncStatus.isReady) {
-      console.warn('⚠️ Cannot open archive while sync is in progress');
+    if (app.connectionStatus !== 'connected') {
+      console.warn('⚠️ Cannot open archive while not connected to the database');
       return;
     }
 
     // set the archive
-    setArchive(selectedArchive);
+    updateData({ archive: selectedArchive });
 
     // get and set the tomes
     const openedTomes = await getTomesByArchiveId(selectedArchive.id);
-    setTomes(openedTomes);
-    // Clear any currently selected tome and entries; user will choose
-    setTome(null);
-    setEntries([]);
-    setEntry(null);
-    setTabbedEntries([]);
+    console.log(`📚 Loaded ${openedTomes.length} tomes for archive: ${selectedArchive.name}`);
+    
+    // Load all entries for all tomes in the archive
+    let allEntries: Entry[] = [];
+    if (openedTomes.length > 0) {
+      // Fetch entries for all tomes in parallel
+      const entryPromises = openedTomes.map(async (tome) => {
+        const tomeEntries = await getEntriesByTomeId(tome.id);
+        console.log(`📚 Loaded ${tomeEntries.length} entries for tome: ${tome.name}`);
+        return tomeEntries;
+      });
+      
+      const allTomeEntries = await Promise.all(entryPromises);
+      allEntries = allTomeEntries.flat();
+      console.log(`📚 Total entries loaded: ${allEntries.length}`);
+    }
+    
+    // Set the first tome and its entries as the open ones
+    const firstTome = openedTomes[0] || null;
+    const firstTomeEntries = firstTome ? allEntries.filter(entry => entry.tome_id === firstTome.id) : [];
+    
+    const firstEntry = firstTomeEntries[0] || null;
+    updateData({ 
+      tomes: openedTomes,
+      openTome: firstTome,
+      openEntries: firstTomeEntries,
+      openEntry: firstEntry,
+      tabbedEntries: [firstTomeEntries[0]],
+      activeTabId: firstEntry?.id || null,
+      entries: allEntries // Store all entries from all tomes
+    });
+    updateApp({ markdown: firstEntry?.content || "" });
+    updateUI({ panelsVisible: true, leftWidth: 200, rightWidth: 200 });
   };
 
   // create a new archive and a new tome with an untitled entry
   const handleArchiveCreate = async (newArchive: Archive, tomeName: string) => {
     // Prevent archive creation if sync is not ready
-    if (!syncStatus.isReady) {
-      console.warn('⚠️ Cannot create archive while sync is in progress');
+    if (app.connectionStatus !== 'connected') {
+      console.warn('⚠️ Cannot create archive while not connected to the database');
       return;
     }
 
     // Create the archive and persist it
     const createdArchive = await createArchive(newArchive.name, newArchive.description || undefined);
     await saveArchive(createdArchive);
-    setArchive(createdArchive);
+    updateData({ archive: createdArchive });
 
     // Create a new tome in the archive
     const createdTome = await createTome(createdArchive.id, tomeName);
     await saveTome(createdTome);
-    setTomes([createdTome]);
-    setTome(createdTome);
+    updateData({ tomes: [createdTome], openTome: createdTome });
     
     // Create a default untitled entry in the new tome
     const createdEntry = await createEntry(createdTome.id, "Untitled Entry", "", "generic");
     await saveEntry(createdEntry);
-    setEntries([createdEntry]);
-    setEntry(createdEntry);
-    setTabbedEntries([...tabbedEntries, createdEntry]);
-    handleCreateTab(createdEntry);
-    // Ensure markdown state is set correctly
-    setMarkdown(createdEntry.content || "");
+    updateData({ 
+      entries: [createdEntry], 
+      openEntry: createdEntry,
+      tabbedEntries: [...data.tabbedEntries, createdEntry],
+      activeTabId: createdEntry.id
+    });
+    updateApp({ markdown: createdEntry.content || "" });
   };
 
   const handleCreateTab = (entry: Entry) => {
-    setTabbedEntries(prev => {
-      if (prev.some(e => e.id === entry.id)) return prev;
-      return [...prev, entry];
-    });
-    setActiveTabId(entry.id);
+    console.log("🔍 Creating tab for entry:", entry.name, "ID:", entry.id);
+    addTabbedEntry(entry);
+    console.log("🔍 Tab created - activeTabId should now be:", entry.id);
   }
 
   // When user clicks a tab in the TabBar
   const handleTabSelect = (id: string) => {
-    setActiveTabId(id);
-    const selected = tabbedEntries.find(e => e.id === id);
+    console.log("🔍 Tab selected:", id);
+    const selected = data.tabbedEntries.find(e => e.id === id);
     if (selected) {
-      setEntry(selected);
-      setMarkdown(selected.content ?? "");
+      setActiveTab(id);
+      updateData({ openEntry: selected });
+      updateApp({ markdown: selected.content ?? "" });
+      console.log("🔍 Tab selection complete - activeTabId:", id, "openEntry:", selected.name);
     }
   };
 
   // Close (remove) a tab
   const handleTabClose = (id: string) => {
-    setTabbedEntries(prev => {
-      const remaining = prev.filter(e => e.id !== id);
-      // Update active tab if needed
-      if (id === activeTabId) {
-        if (remaining.length > 0) {
-          const newActive = remaining[remaining.length - 1];
-          setActiveTabId(newActive.id);
-          setEntry(newActive);
-          setMarkdown(newActive.content ?? "");
-        } else {
-          setActiveTabId(null);
-          setEntry(null);
-          setMarkdown("");
-        }
+    console.log("🔍 Closing tab:", id, "activeTabId:", data.activeTabId);
+    
+    // Get the current tabbed entries before removal to determine the new active tab
+    const currentTabs = data.tabbedEntries;
+    const isActiveTab = id === data.activeTabId;
+    
+    // Remove the tab from the list (reducer will handle active tab logic)
+    removeTabbedEntry(id);
+    
+    // If we're closing the active tab, we need to update the open entry and markdown
+    if (isActiveTab) {
+      const remainingTabs = currentTabs.filter(tab => tab.id !== id);
+      if (remainingTabs.length > 0) {
+        const newActive = remainingTabs[remainingTabs.length - 1];
+        console.log("🔍 Setting new active tab:", newActive.name, "ID:", newActive.id);
+        updateData({ openEntry: newActive });
+        updateApp({ markdown: newActive.content ?? "" });
+      } else {
+        console.log("🔍 No tabs remaining, clearing state");
+        updateData({ openEntry: null });
+        updateApp({ markdown: "" });
       }
-      return remaining;
-    });
+    }
   };
 
   // Drag-to-reorder tabs
   const handleTabReorder = (dragId: string, targetId: string) => {
-    setTabbedEntries(prev => {
-      const dragIndex = prev.findIndex(e => e.id === dragId);
-      const targetIndex = prev.findIndex(e => e.id === targetId);
-      if (dragIndex === -1 || targetIndex === -1) return prev;
-      const reordered = [...prev];
-      const [dragged] = reordered.splice(dragIndex, 1);
-      reordered.splice(targetIndex, 0, dragged);
-      return reordered;
-    });
+    const dragIndex = data.tabbedEntries.findIndex(e => e.id === dragId);
+    const targetIndex = data.tabbedEntries.findIndex(e => e.id === targetId);
+    if (dragIndex === -1 || targetIndex === -1) return;
+    
+    const reordered = [...data.tabbedEntries];
+    const [dragged] = reordered.splice(dragIndex, 1);
+    reordered.splice(targetIndex, 0, dragged);
+    updateData({ tabbedEntries: reordered });
   };
 
   // open a tome
-  const handleTomeClick = async (clickedTome: Tome, entries: Entry[]) => {
-    if (!clickedTome) {
-      console.error("Selected tome does not exist.");
+  const handleTomeClick = async (tome: Tome) => {
+    // check if the tome is already open
+    if (data.openTome?.id === tome.id) {
+      console.warn("Tome already selected: ", tome.name);
       return;
     }
-    if (tome?.id !== clickedTome.id) {
-      // If a different tome is selected, set it as the new selected tome
-      setTome(clickedTome);
-      const tomeEntries = entries as Entry[];
-       setEntries(tomeEntries);
-    } else {
-      console.warn("selected tome is already open: ", clickedTome.name)
-      return;
-    }
+    
+    // set the open tome
+    updateData({ openTome: tome });
+    
+    // filter entries for this tome from the already loaded entries
+    const tomeEntries = data.entries.filter(entry => entry.tome_id === tome.id);
+    console.log(`📚 Found ${tomeEntries.length} entries for tome: ${tome.name}`);
+    
+    // update the open entries
+    updateData({
+      openEntries: tomeEntries
+    });
   };
 
   // open an entry
   const handleEntryClick = async (e: Entry) => {
+    console.log("🔍 Entry clicked:", e.name, "ID:", e.id);
+    console.log("🔍 Current tabbedEntries:", data.tabbedEntries.map(t => t.name));
+    console.log("🔍 Current activeTabId:", data.activeTabId);
     
-    setEntry(e);
-    handleCreateTab(e);
-    setMarkdown(e.content ?? "");
+    // check if the entry is already in the tabbedEntries
+    if (!data.tabbedEntries.some(t => t.id === e.id)) {
+      console.log("🔍 Adding entry to tabs");
+      // if not, add it to the tabbedEntries (this also sets activeTabId)
+      handleCreateTab(e);
+    } else {
+      console.log("🔍 Entry already in tabs, setting as active");
+      // if it's already in tabs, just set it as active
+      setActiveTab(e.id);
+    }
+    // set the open entry and update markdown
+    updateData({ openEntry: e });
+    updateApp({ markdown: e.content ?? "" });
+    
+    console.log("🔍 After update - activeTabId should be:", e.id);
   };
 
   // save the entry when the user presses Ctrl+S
   const handleSave = useCallback(async () => {
-      if (!entry) return;
+      if (!data.openEntry) return;
       // Ensure entry timestamp is fresh so saveEntry persists the new content
-      entry.updated_at = new Date().toISOString();
+      data.openEntry.updated_at = new Date().toISOString();
       try {
-        await saveEntry(entry as Entry);
+        await saveEntry(data.openEntry as Entry);
         // If the entry was saved successfully, remove it from dirty entries
-        setDirtyEntries(prev => prev.filter(e => e.id !== (entry as Entry).id));
-        console.log(`Entry ${entry?.name} saved successfully`);
-        console.log("DirtyEntries:")
-        for (var e of dirtyEntries) {
-          console.log(`Entry: ${e.name}`);
-        }
+        removeDirtyEntry(data.openEntry.id);
+        console.log(`Entry ${data.openEntry?.name} saved successfully`);
       } catch (error) {
         // If the save failed, log an error
-        console.error("Failed to save entry ", entry?.name, error);
+        console.error("Failed to save entry ", data.openEntry?.name, error);
       }
-  }, [entry, dirtyEntries]);
+  }, [data.openEntry, removeDirtyEntry]);
 
   const handleSaveAll = async () => {
     // Save all dirty entries using bulk save
-    await bulkSaveEntries(dirtyEntries as Entry[]);
-    setDirtyEntries([]);
+    await bulkSaveEntries(data.dirtyEntries as Entry[]);
+    clearDirtyEntries();
   };
 
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleEntryChanged = async (content: string) => {
      // update markdown shown in preview
-     setMarkdown(content);
+     updateApp({ markdown: content });
 
-     if (!entry) return;
+     if (!data.openEntry) return;
 
      // update entry object
-     entry.content = content;
-     entry.updated_at = new Date().toISOString();
+     data.openEntry.content = content;
+     data.openEntry.updated_at = new Date().toISOString();
 
      // add to dirty list if not present
-     setDirtyEntries(prev => {
-       if (prev.some(e => e.id === entry.id)) return prev;
-       return [...prev, entry];
-     });
+     addDirtyEntry(data.openEntry);
 
      // debounce save
      if (saveTimeout.current) {
@@ -258,8 +281,8 @@ function App() {
      }
      saveTimeout.current = setTimeout(async () => {
        try {
-         await saveEntry(entry);
-         setDirtyEntries(prev => prev.filter(e => e.id !== entry.id));
+         await saveEntry(data.openEntry!);
+         removeDirtyEntry(data.openEntry!.id);
        } catch (error) {
          console.error("Failed to save entry:", error);
        }
@@ -269,44 +292,47 @@ function App() {
   //------ CREATE NEW TOME/ENTRY ------
 
   const handleNewTome = async (newTomeName: string) => {
-    if (archive && !tomes.some(tome => tome.name === newTomeName)) {
-      const newTome = await createTome(archive.id, newTomeName);
+    if (data.archive && !data.tomes.some(tome => tome.name === newTomeName)) {
+      const newTome = await createTome(data.archive.id, newTomeName);
       await saveTome(newTome);
-      setTomes([...tomes, newTome]);
-      setTome(newTome);
+      updateData({ tomes: [...data.tomes, newTome], openTome: newTome });
       // Automatically create a default entry in the new tome
       const defaultEntry = await createEntry(newTome.id, "Untitled Entry", "", "generic");
       await saveEntry(defaultEntry);
-      setEntries([defaultEntry]);
-      setEntry(defaultEntry);
-      setTabbedEntries([...tabbedEntries, defaultEntry]);
-      setActiveTabId(defaultEntry.id)
-      setMarkdown(defaultEntry.content || "");
+      updateData({ 
+        entries: [defaultEntry], 
+        openEntry: defaultEntry,
+        tabbedEntries: [...data.tabbedEntries, defaultEntry],
+        activeTabId: defaultEntry.id
+      });
+      updateApp({ markdown: defaultEntry.content || "" });
     }
   };
 
   const handleNewEntry = async (newEntryName: string, entry_type: "generic" | "requirement" | "specification" | "meeting" | "design" | "implementation" | "test" | "other") => {
-    //
-    if (tome && !entries.some(e => e.name === newEntryName)) {
-      const newEntry = await createEntry(tome.id, newEntryName, "", entry_type);
+    if (data.openTome && !data.openEntries.some(e => e.name === newEntryName)) {
+      const newEntry = await createEntry(data.openTome.id, newEntryName, "", entry_type);
       await saveEntry(newEntry);
-      setEntries([...entries, newEntry]);
-      setEntry(newEntry);
+      updateData({ 
+        entries: [...data.entries, newEntry], 
+        openEntry: newEntry 
+      });
       handleCreateTab(newEntry);
-      setMarkdown(newEntry.content || "");
-      handleShowEntryPrompt(false);
+      updateData({ activeTabId: newEntry.id });
+      updateApp({ markdown: newEntry.content || "" });
+      updateModals({ showEntryPrompt: false });
     }
   };
 
   // Handle closing the app
   // This will prompt the user to save changes if there are dirty entries
   const handleClose = async () => {
-    await exitApp(dirtyEntries as Entry[]);
+    await exitApp(data.dirtyEntries as Entry[]);
   };
 
   // Handle preferences dialog
   const togglePreferences = () => {
-    setShowPreferences(!showPreferences);
+    updateUI({ showPreferences: !ui.showPreferences });
   };
 
   const handlePreferencesApply = (themes: { [key: string]: string }, plugins: { [key: string]: string }) => {
@@ -314,70 +340,43 @@ function App() {
   }
 
   const handlePreferencesClose = () => {
-    setShowPreferences(false);
-  }
-
-  const handleTogglePreview = (preview: boolean) => {
-    setPreview(preview);
-  }
-
-  const handleTogglePlugin = (plugin: string, checked: boolean) => {
-    console.log("Toggle plugin:", plugin, checked);
-  }
-
-  // Toggle Azure Sync preference
-  const handleToggleAzureSync = (checked: boolean) => {
-    setEnableAzureSync(checked);
-    localStorage.setItem('enableAzureSync', JSON.stringify(checked));
-    // Reload to allow Auth component to pick up the new preference
-    window.location.reload();
-  }
-
-  const handleSelectTheme = (theme: string) => {
-    console.log("Select theme:", theme);
+    updateUI({ showPreferences: false });
   }
 
   const togglePanels = () => {
-    setPanelsVisible(prev => !prev);
-  };
-
-  const handleSearch = (query: string) => {
-    console.log("Search query:", query);
-    // TODO: Implement search functionality
-    // This could search through entries, tomes, and archives
+    updateUI({ panelsVisible: !ui.panelsVisible });
   };
 
   // AI Link Suggestions Functions
   const generateAISuggestions = async () => {
-    if (!entry || !tome) return;
+    if (!data.openEntry || !data.openTome) return;
     
-    setIsLoadingAI(true);
-    setShowAISuggestions(true);
+    updateUI({ isLoadingAI: true, showAISuggestions: true });
     
     try {
       // Get all entries from the current tome to provide context
-      const allEntries = await getEntriesByTomeId(tome.id);
+      const allEntries = await getEntriesByTomeId(data.openTome.id);
       
       const response = await aiLinkService.getSuggestions({
-        currentEntry: entry,
+        currentEntry: data.openEntry,
         allEntries: allEntries,
         context: {
-          archiveId: archive?.id,
-          tomeId: tome.id,
+          archiveId: data.archive?.id,
+          tomeId: data.openTome.id,
         },
       });
       
       if (response.status === 'success') {
-        setAiSuggestions(response.suggestions);
+        updateAI({ suggestions: response.suggestions });
       } else {
         console.error('AI suggestions failed:', response.error);
-        setAiSuggestions([]);
+        updateAI({ suggestions: [] });
       }
     } catch (error) {
       console.error('Error generating AI suggestions:', error);
-      setAiSuggestions([]);
+      updateAI({ suggestions: [] });
     } finally {
-      setIsLoadingAI(false);
+      updateUI({ isLoadingAI: false });
     }
   };
 
@@ -386,7 +385,7 @@ function App() {
     console.log("🔍 Running clarity analysis for entry:", entry.name, "type:", entry.entry_type);
     if (!entry.content.trim() || entry.entry_type !== 'requirement') {
       console.log("Clarity analysis not supported for non-requirement entries");
-      setDecorations([]); // Clear decorations for non-requirement entries
+      updateApp({ decorations: [] }); // Clear decorations for non-requirement entries
       return;
     }
     const chunks = chunkMarkdown(entry.content);
@@ -397,12 +396,12 @@ function App() {
     await persistClarityFindings(entry.id, chunks, findings);
     const decorationExtensions = createDecorationExtension(findings);
     console.log("🎨 Decoration extensions:", decorationExtensions);
-    setDecorations(decorationExtensions);
+    updateApp({ decorations: decorationExtensions });
   }
 
   // Apply an AI suggestion to the current entry
   const handleApplyAISuggestion = (suggestion: LinkSuggestion) => {
-    if (!entry) return;
+    if (!data.openEntry) return;
     
     // Apply the suggestion to the current entry content
     const linkText = suggestion.suggestedText || suggestion.targetEntryName;
@@ -410,74 +409,76 @@ function App() {
     
     // If position is specified, insert at that position
     if (suggestion.position) {
-      const content = entry.content;
+      const content = data.openEntry.content;
       const newContent = 
         content.slice(0, suggestion.position.start) +
         linkMarkdown +
         content.slice(suggestion.position.end);
       
-      setMarkdown(newContent);
+      updateApp({ markdown: newContent });
       handleEntryChanged(newContent);
     } else {
       // Append to the end of the content
-      const newContent = entry.content + '\n\n' + linkMarkdown;
-      setMarkdown(newContent);
+      const newContent = data.openEntry.content + '\n\n' + linkMarkdown;
+      updateApp({ markdown: newContent });
       handleEntryChanged(newContent);
     }
     
     // Remove the applied suggestion
-    setAiSuggestions(prev => 
-      prev.filter(s => s.targetEntryId !== suggestion.targetEntryId)
-    );
+    updateAI({ 
+      suggestions: ai.suggestions.filter(s => s.targetEntryId !== suggestion.targetEntryId)
+    });
   };
 
   // Dismiss an AI suggestion
   const handleDismissAISuggestion = (suggestion: LinkSuggestion) => {
-    setAiSuggestions(prev => 
-      prev.filter(s => s.targetEntryId !== suggestion.targetEntryId)
-    );
+    updateAI({ 
+      suggestions: ai.suggestions.filter(s => s.targetEntryId !== suggestion.targetEntryId)
+    });
   };
 
   // Toggle AI suggestions
   const toggleAISuggestions = () => {
-    setShowAISuggestions(!showAISuggestions);
-    if (!showAISuggestions && aiSuggestions.length === 0) {
+    updateUI({ showAISuggestions: !ui.showAISuggestions });
+    if (!ui.showAISuggestions && ai.suggestions.length === 0) {
       generateAISuggestions();
     }
   };
 
   // Show the entry prompt
   const handleShowEntryPrompt = (show: boolean) => {
-    setShowEntryPrompt(show);
+    updateModals({ showEntryPrompt: show });
   }
 
   // Show the tome prompt
   const handleShowTomePrompt = (show: boolean) => {
-    setShowTomePrompt(show);
+    updateModals({ showTomePrompt: show });
   };
 
   // Rename an entry
   const handleRenameEntry = async (entry: Entry) => {
-    setEntryToRename(entry);
+    updateModals({ entryToRename: entry });
   };
 
   const handleRenameConfirm = async (newName: string) => {
-    if (!entryToRename) return;
+    if (!modals.entryToRename) return;
     
-    const updatedEntry = { ...entryToRename, name: newName, updated_at: new Date().toISOString() };
+    const updatedEntry = { ...modals.entryToRename, name: newName, updated_at: new Date().toISOString() };
     
     try {
       await saveEntry(updatedEntry);
       
       // Update local state
-      setEntries(prev => prev.map(e => e.id === updatedEntry.id ? updatedEntry : e));
-      setTabbedEntries(prev => prev.map(e => e.id === updatedEntry.id ? updatedEntry : e));
+      updateData({
+        entries: data.entries.map(e => e.id === updatedEntry.id ? updatedEntry : e),
+        tabbedEntries: data.tabbedEntries.map(e => e.id === updatedEntry.id ? updatedEntry : e)
+      });
       
-      if (entry?.id === updatedEntry.id) {
-        setEntry(updatedEntry);
+      if (data.openEntry?.id === updatedEntry.id) {
+        updateData({ openEntry: updatedEntry });
       }
       
-      setEntryToRename(null);
+      updateModals({ entryToRename: null });
     } catch (error) {
       console.error("Failed to rename entry:", error);
     }
@@ -485,33 +486,39 @@ function App() {
 
   // Delete an entry
   const handleDeleteEntry = async (entry: Entry) => {
-    setEntryToDelete(entry);
+    updateModals({ entryToDelete: entry });
   };
 
   const handleDeleteConfirm = async () => {
-    if (!entryToDelete) return;
+    if (!modals.entryToDelete) return;
     
     try {
       // Remove from database
-      await deleteEntry(entryToDelete.id);
-      setEntries(prev => prev.filter(e => e.id !== entryToDelete.id));
-      setTabbedEntries(prev => prev.filter(e => e.id !== entryToDelete.id));
+      await deleteEntry(modals.entryToDelete.id);
+      updateData({
+        entries: data.entries.filter(e => e.id !== modals.entryToDelete!.id),
+        tabbedEntries: data.tabbedEntries.filter(e => e.id !== modals.entryToDelete!.id)
+      });
       
-      if (activeTabId === entryToDelete.id) {
-        const remaining = tabbedEntries.filter(e => e.id !== entryToDelete.id);
+      if (data.activeTabId === modals.entryToDelete.id) {
+        const remaining = data.tabbedEntries.filter(e => e.id !== modals.entryToDelete!.id);
         if (remaining.length > 0) {
           const newActive = remaining[remaining.length - 1];
-          setActiveTabId(newActive.id);
-          setEntry(newActive);
-          setMarkdown(newActive.content ?? "");
+          updateData({
+            activeTabId: newActive.id,
+            openEntry: newActive
+          });
+          updateApp({ markdown: newActive.content ?? "" });
         } else {
-          setActiveTabId(null);
-          setEntry(null);
-          setMarkdown("");
+          updateData({
+            activeTabId: null,
+            openEntry: null
+          });
+          updateApp({ markdown: "" });
         }
       }
       
-      setEntryToDelete(null);
+      updateModals({ entryToDelete: null });
     } catch (error) {
       console.error("Failed to delete entry:", error);
     }
@@ -521,7 +528,7 @@ function App() {
   // This will save the current entry when the user presses Ctrl+S
   useEffect(() => {
     const handleKeyDown = async (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "s" && entry) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "s" && data.openEntry) {
         e.preventDefault();
         await handleSave();
       }
@@ -531,14 +538,14 @@ function App() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [entry, handleSave]);
+  }, [data.openEntry, handleSave]);
 
   useEffect(() => {
     const handleBeforeUnload = async (e: BeforeUnloadEvent) => {
-      if (dirtyEntries.length > 0) {
+      if (data.dirtyEntries.length > 0) {
         e.preventDefault();
         e.returnValue = ""; // Standard way to trigger confirmation dialog
-        await exitApp(dirtyEntries as Entry[]);
+        await exitApp(data.dirtyEntries as Entry[]);
       }
     };
 
@@ -546,113 +553,46 @@ function App() {
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
-  }, [dirtyEntries]);
+  }, [data.dirtyEntries]);
 
   // Initialize the app on first load
   // This will set up the database and sync data from the server
   useEffect(() => {
-    const initializeApp = async () => {
-      // Prevent multiple initializations
-      if (isInitialized.current) {
-        console.log('⚠️ App already initialized, skipping...');
-        return;
-      }
-      
-      isInitialized.current = true;
-      
-      try {
-        console.log('🚀 Initializing StackScribe...');
-        
-        // Initialize the Rust database
-        await initDatabase();
-        console.log("✅ Database initialization completed successfully!");
-        
-        // Test the database functionality
-        try {
-          const testResult = await testDatabase();
-          console.log('🧪 Database test result:', testResult);
-        } catch (testError) {
-          console.error('❌ Database test failed:', testError);
-        }
-        
-        // Initialize sync manager and wait for it to be ready
-        const syncManager = getSyncManager();
-        if (syncManager) {
-          // Subscribe to sync status changes
-          const unsubscribe = syncManager.onStatusChange(setSyncStatus);
-          
-          // Wait for initialization to complete
-          await syncManager.waitForInitialization();
-          
-          // Cleanup subscription when component unmounts
-          return () => unsubscribe();
-        } else {
-          // If no sync manager, mark as ready for offline usage
-          setSyncStatus({
-            isInitializing: false,
-            isSyncing: false,
-            isReady: true,
-            error: null
-          });
-        }
-        
-      } catch (error) {
-        console.error("❌ Failed to initialize app:", error);
-        // Reset flag on error so retry is possible
-        isInitialized.current = false;
-        setSyncStatus({
-          isInitializing: false,
-          isSyncing: false,
-          isReady: true,
-          error: error instanceof Error ? error.message : 'Initialization failed'
-        });
-      }
-    };
-    initializeApp();
-  }, []);
+    const testDatabaseConnection = async () => {
+      // test the database
+      const connectionStatus = await testDatabase();
+      console.log('🧪 Database test result:', connectionStatus);
+      updateApp({ connectionStatus: connectionStatus as unknown as string });
 
-  // Fetch archives only after sync is ready
-  useEffect(() => {
-    const fetchArchives = async () => {
-      if (!syncStatus.isReady) return;
-      
-      try {
+      // fetch the archives
+      if (connectionStatus === 'connected' && !app.isInitialized) {
         const fetchedArchives = await getAllArchives();
-        setArchives(fetchedArchives);
-      } catch (error) {
-        console.error("Failed to fetch archives:", error);
+        if (fetchedArchives) {
+          updateData({ archives: fetchedArchives });
+          updateApp({ isInitialized: true });
+        }
       }
     };
-
-    fetchArchives();
-  }, [syncStatus.isReady]);
-
-  useEffect(() => {
-    if (entry) {
-      runClarityAnalysis(entry);
-    } else {
-      // Clear decorations when no entry is selected
-      setDecorations([]);
-    }
-  }, [entry]);
+    testDatabaseConnection();
+  }, []);
 
   useEffect(() => {
     const handleMove = (e: MouseEvent) => {
-      if (dragging === "left") {
-        setLeftWidth(Math.min(Math.max(e.clientX, 150), window.innerWidth - rightWidth - 200));
-      } else if (dragging === "right") {
-        const newRight = Math.min(Math.max(window.innerWidth - e.clientX, 150), window.innerWidth - leftWidth - 200);
-        setRightWidth(newRight);
+      if (ui.dragging === "left") {
+        updateUI({ leftWidth: Math.min(Math.max(e.clientX, 150), window.innerWidth - ui.rightWidth - 200) });
+      } else if (ui.dragging === "right") {
+        const newRight = Math.min(Math.max(window.innerWidth - e.clientX, 150), window.innerWidth - ui.leftWidth - 200);
+        updateUI({ rightWidth: newRight });
       }
     };
-    const stop = () => setDragging(null);
+    const stop = () => updateUI({ dragging: null });
     window.addEventListener("mousemove", handleMove);
     window.addEventListener("mouseup", stop);
     return () => {
       window.removeEventListener("mousemove", handleMove);
       window.removeEventListener("mouseup", stop);
     };
-  }, [dragging, leftWidth, rightWidth]);
+  }, [ui.dragging, ui.leftWidth, ui.rightWidth]);
 
   return (
     <>
@@ -660,19 +600,19 @@ function App() {
     <StartupNotification />
 
     {/* PREFERENCES */}
-    {showPreferences && <Preferences 
-      themes={themes}
-      plugins={plugins}
+    {ui.showPreferences && <Preferences 
+      themes={{}}
+      plugins={{}}
       onApply={handlePreferencesApply}
       onClose={handlePreferencesClose}
-      onTogglePreview={handleTogglePreview}
-      onTogglePlugin={handleTogglePlugin}
-      onSelectTheme={handleSelectTheme}
-      onToggleAzureSync={handleToggleAzureSync}
+      onTogglePreview={() => {}}
+      onTogglePlugin={() => {}}
+      onSelectTheme={() => {}}
+      onToggleAzureSync={() => {}}
     />}
 
     {/* NEW ENTRY PROMPT */}
-    {ShowEntryPrompt && <NewEntryPrompt 
+    {modals.showEntryPrompt && <NewEntryPrompt 
       title="New Entry"
       label="Entry Name"
       placeholder="Enter a name for the new entry"
@@ -684,7 +624,7 @@ function App() {
     />}
 
     {/* NEW TOME PROMPT */}
-    {ShowTomePrompt && <NewTomePrompt 
+    {modals.showTomePrompt && <NewTomePrompt 
       title="New Tome"
       label="Tome Name"
       placeholder="Enter a name for the new tome"
@@ -696,12 +636,12 @@ function App() {
     />}
 
     {/* RENAME ENTRY PROMPT */}
-    {entryToRename && (
+    {modals.entryToRename && (
       <NewEntryPrompt
         title="Rename Entry"
         label="Entry Name"
         placeholder="Enter a new name for the entry"
-        onClose={() => setEntryToRename(null)}
+        onClose={() => updateModals({ entryToRename: null })}
         onConfirm={(newName: string, entry_type: string) => {
           handleRenameConfirm(newName);
         }}
@@ -709,13 +649,13 @@ function App() {
     )}
 
     {/* DELETE ENTRY CONFIRMATION */}
-    {entryToDelete && (
+    {modals.entryToDelete && (
       <div className="modal-overlay">
         <div className="modal">
           <h3>Delete Entry</h3>
-          <p>Are you sure you want to delete "{entryToDelete.name}"?</p>
+          <p>Are you sure you want to delete "{modals.entryToDelete.name}"?</p>
           <div className="modal-buttons">
-            <button onClick={() => setEntryToDelete(null)}>Cancel</button>
+            <button onClick={() => updateModals({ entryToDelete: null })}>Cancel</button>
             <button onClick={handleDeleteConfirm} className="danger">Delete</button>
           </div>
         </div>
@@ -724,10 +664,10 @@ function App() {
 
     {/* START WINDOW */}
     <StartWindow 
-      archives={archives} 
+      archives={data.archives} 
       onArchiveClick={handleArchiveOpen} 
       onCreateArchive={handleArchiveCreate}
-      syncStatus={syncStatus}
+      syncStatus={{ isInitializing: false, isSyncing: false, isReady: true, error: null }}
     />
 
     {/* CUSTOM HEADER BAR */}
@@ -740,27 +680,35 @@ function App() {
       onSaveAll={handleSaveAll}
       onClose={handleClose}
       onPreferences={togglePreferences}
-      onSearch={handleSearch}
-      panelsVisible={panelsVisible}
+      onSearch={setSearchResults}
+      onSearchResultClick={(entry) => {
+        handleEntryClick(entry);
+        // Clear search results after clicking
+        setSearchResults([]);
+      }}
+      panelsVisible={ui.panelsVisible}
       onTogglePanels={togglePanels}
       onToggleAI={toggleAISuggestions}
-      aiActive={showAISuggestions}
+      aiActive={ui.showAISuggestions}
+      entries={data.entries}
     />
+
+
 
     {/* APP */}
     <div className="app">
       
       {/* LEFT PANEL */}
-      {panelsVisible && (
-        <div className="side-panel" style={{ width: leftWidth }}>
+      {ui.panelsVisible && (
+        <div className="side-panel" style={{ width: ui.leftWidth }}>
           {/* TODO: right-click context menu for tomes */}
-          {archive && (
+          {data.archive && (
             <div className="tree-view">
               <ArchiveTree
-                archive={archive}
-                tomes={tomes}
-                onTomeClick={(t: Tome, es: Entry[]) => {
-                  handleTomeClick(t, es);
+                archive={data.archive}
+                tomes={data.tomes}
+                onTomeClick={(t: Tome) => {
+                  handleTomeClick(t);
                 }}
               />
             </div>
@@ -773,10 +721,10 @@ function App() {
       )}
 
       {/* ENTRY VIEW */}
-      {panelsVisible && tome && (
+      {ui.panelsVisible && data.openTome && (
         <div className="entry-view-panel">
           <EntryView 
-            entries={entries} 
+            entries={data.openEntries} 
             onEntryClick={handleEntryClick} 
             onRenameEntry={handleRenameEntry}
             onDeleteEntry={handleDeleteEntry}
@@ -790,26 +738,29 @@ function App() {
         style={{ flex: 1 }}
       >
         <TabBar 
-          tabs={tabbedEntries}
-          activeTabId={activeTabId}
-          dirtyIds={dirtyEntries.map(e => e.id)}
+          tabs={data.tabbedEntries}
+          activeTabId={data.activeTabId}
+          dirtyIds={data.dirtyEntries.map(e => e.id)}
           onSelect={handleTabSelect}
           onClose={handleTabClose}
           onReorder={handleTabReorder}
         />
-        {activeTabId ? (
-          tabbedEntries
-            .filter(e => e.id === activeTabId)
-            .map(e => (
-              <MdEditor
-                key={e.id}
-                value={markdown}
-                onEntryChange={(content: string) => {
-                  handleEntryChanged(content);
-                }}
-                decorations={decorations}
-              />
-            ))
+        {data.activeTabId ? (
+          data.tabbedEntries
+            .filter(e => e.id === data.activeTabId)
+            .map(e => {
+              console.log("🔍 Rendering editor for entry:", e.name, "ID:", e.id);
+              return (
+                <MdEditor
+                  key={e.id}
+                  value={app.markdown}
+                  onEntryChange={(content: string) => {
+                    handleEntryChanged(content);
+                  }}
+                  decorations={app.decorations}
+                />
+              );
+            })
         ) : (
           <div className="editor-placeholder">
             <img className="logo-placeholder" src={logo} alt="StackScribe logo" width={120} height={120} />
@@ -821,7 +772,7 @@ function App() {
       {/* DIVIDER */}
       <div
         className="divider"
-        onMouseDown={() => setDragging("right")}
+        onMouseDown={() => updateUI({ dragging: "right" })}
         style={{ width: DIVIDER_SIZE }}
       />
 
@@ -829,18 +780,18 @@ function App() {
       <div
         id="preview-container"
         className="panel"
-        style={{ width: rightWidth, overflow: "auto", padding: "0px"}}
+        style={{ width: ui.rightWidth, overflow: "auto", padding: "0px"}}
       >
-        {showAISuggestions && (
+        {ui.showAISuggestions && (
           <AILinkSuggestions
-            suggestions={aiSuggestions}
-            isLoading={isLoadingAI}
+            suggestions={ai.suggestions}
+            isLoading={ui.isLoadingAI}
             onApplySuggestion={handleApplyAISuggestion}
             onDismissSuggestion={handleDismissAISuggestion}
             onRefreshSuggestions={generateAISuggestions}
           />
         )}
-        <PreviewPanel markdown={markdown} />
+        <PreviewPanel markdown={app.markdown} />
       
       </div>
     </div>

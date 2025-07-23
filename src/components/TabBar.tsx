@@ -22,46 +22,69 @@ export default function TabBar({
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const dragOverIdRef = useRef<string | null>(null);
   const barRef = useRef<HTMLDivElement>(null);
+  const hasDraggedRef = useRef<boolean>(false);
 
   const startDrag = (id: string) => (e: React.MouseEvent) => {
+    // Only start drag if it's not a close button click
+    if ((e.target as HTMLElement).classList.contains('tab-close')) {
+      return;
+    }
+    
+    // Only start drag if clicking on the left edge (drag handle)
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    if (clickX > 8) { // Only drag if clicking within 8px of left edge
+      return;
+    }
+    
     e.preventDefault();
+    hasDraggedRef.current = false;
     setDraggingId(id);
 
     const move = (ev: MouseEvent) => {
-      const bar = barRef.current;
-      if (!bar) return;
-      const { left } = bar.getBoundingClientRect();
-      const x = ev.clientX - left;
-
-      // figure out which tab we are over
-      let target: string | null = null;
-      for (const child of Array.from(bar.children) as HTMLDivElement[]) {
-        const rect = child.getBoundingClientRect();
-        if (x >= rect.left - left && x < rect.right - left) {
-          target = child.dataset.id ?? null;
-          break;
-        }
+      // Only mark as dragging if we've moved more than a few pixels
+      if (!hasDraggedRef.current && Math.abs(ev.clientX - e.clientX) > 5) {
+        hasDraggedRef.current = true;
       }
-      setDragOverId(target);
-      dragOverIdRef.current = target;
-    };
-
-    const end = (ev: MouseEvent) => {
-      const bar = barRef.current;
-      let dropTarget = dragOverIdRef.current;
-      if (bar) {
+      
+      if (hasDraggedRef.current) {
+        const bar = barRef.current;
+        if (!bar) return;
         const { left } = bar.getBoundingClientRect();
         const x = ev.clientX - left;
+
+        // figure out which tab we are over
+        let target: string | null = null;
         for (const child of Array.from(bar.children) as HTMLDivElement[]) {
           const rect = child.getBoundingClientRect();
           if (x >= rect.left - left && x < rect.right - left) {
-            dropTarget = child.dataset.id ?? dropTarget;
+            target = child.dataset.id ?? null;
             break;
           }
         }
+        setDragOverId(target);
+        dragOverIdRef.current = target;
       }
-      if (id && dropTarget && id !== dropTarget) {
-        onReorder(id, dropTarget);
+    };
+
+    const end = (ev: MouseEvent) => {
+      if (hasDraggedRef.current) {
+        const bar = barRef.current;
+        let dropTarget = dragOverIdRef.current;
+        if (bar) {
+          const { left } = bar.getBoundingClientRect();
+          const x = ev.clientX - left;
+          for (const child of Array.from(bar.children) as HTMLDivElement[]) {
+            const rect = child.getBoundingClientRect();
+            if (x >= rect.left - left && x < rect.right - left) {
+              dropTarget = child.dataset.id ?? dropTarget;
+              break;
+            }
+          }
+        }
+        if (id && dropTarget && id !== dropTarget) {
+          onReorder(id, dropTarget);
+        }
       }
       setDraggingId(null);
       setDragOverId(null);
@@ -89,12 +112,18 @@ export default function TabBar({
               isDragOver ? "drag-over" : ""
             } ${draggingId === tab.id ? "dragging" : ""}`}
             onMouseDown={startDrag(tab.id)}
-            onClick={() => onSelect(tab.id)}
+            onClick={(e) => {
+              // Don't trigger click if we've been dragging or if clicking on close button
+              if (!hasDraggedRef.current && !(e.target as HTMLElement).classList.contains('tab-close')) {
+                onSelect(tab.id);
+              }
+            }}
           >
             <span className="tab-title">{tab.name}</span>
             {isDirty && <span className="unsaved-dot" />}
             <span
               className="tab-close"
+              style={{ cursor: "pointer" }}
               onClick={(e) => {
                 e.stopPropagation();
                 onClose(tab.id);

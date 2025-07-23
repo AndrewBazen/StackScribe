@@ -69,7 +69,7 @@ pub fn run() {
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 // Initialize the database first
-                match init_database(app_handle.state::<DbState>()).await {
+                match init_database(app_handle.state::<DbState>(), app_handle.clone()).await {
                     Ok(_) => {
                         println!("✅ Database initialized successfully");
                     },

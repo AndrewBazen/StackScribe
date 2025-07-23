@@ -1,6 +1,7 @@
 use crate::database::{Database, Archive, Tome, Entry};
+
 use std::sync::Mutex;
-use tauri::State;
+use tauri::{Manager, State};
 
 pub struct DbState(Mutex<Option<Database>>);
 
@@ -10,14 +11,26 @@ impl Default for DbState {
     }
 }
 
+
 #[tauri::command]
-pub async fn init_database(db_state: State<'_, DbState>) -> Result<(), String> {
-    let db_path = "stackscribe.db";
-    let db = Database::new(db_path).map_err(|e| e.to_string())?;
+fn get_app_data_dir(app: tauri::AppHandle) -> Result<String, String> {
+    let app_data_dir = app.path().app_data_dir().unwrap();
+    let db_path = app_data_dir.join("stackscribe.db");
+    let db_path_str = db_path.to_str().unwrap();
+    Ok(db_path_str.to_string())
+}
+
+// initialize the database if it doesn't exist
+#[tauri::command]
+pub async fn init_database(db_state: State<'_, DbState>, app: tauri::AppHandle) -> Result<(), String> {
+    let db_path = get_app_data_dir(app).map_err(|e| e.to_string())?;
+    println!("DB_PATH: {}", db_path);
+    let db = Database::new(&db_path).map_err(|e| e.to_string())?;
     *db_state.0.lock().unwrap() = Some(db);
     Ok(())
 }
 
+// get all archives
 #[tauri::command]
 pub async fn get_all_archives(db_state: State<'_, DbState>) -> Result<Vec<Archive>, String> {
     let db_guard = db_state.0.lock().unwrap();
@@ -128,7 +141,7 @@ pub async fn test_database(db_state: State<'_, DbState>) -> Result<String, Strin
         id: "test-archive-1".to_string(),
         name: "Test Archive".to_string(),
         description: Some("A test archive for database testing".to_string()),
-        created_at: "2024-01-01T00:00:00Z".to_string(),
+        created_at: "2024-01-01T00:00:00Z".to_string(), 
         updated_at: "2024-01-01T00:00:00Z".to_string(),
     };
 
@@ -140,13 +153,14 @@ pub async fn test_database(db_state: State<'_, DbState>) -> Result<String, Strin
     match retrieved {
         Some(archive) => {
             if archive.name == "Test Archive" {
-                Ok("Database test successful!".to_string())
+                Ok(("connected".to_string()))
             } else {
-                Err("Database test failed: archive name mismatch".to_string())
+                Err("disconnected".to_string())
             }
         },
-        None => Err("Database test failed: could not retrieve test archive".to_string())
+        None => Err("disconnected".to_string()),
     }
+
 }
 
 #[tauri::command]
