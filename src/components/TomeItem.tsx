@@ -1,7 +1,7 @@
 
 import { ChevronDownIcon } from "@radix-ui/react-icons";
 import { Tome } from "../types/tome";
-import { getEntriesByTomeId } from "../stores/dataStore";
+import { getEntriesByTomeId } from "../services/rustDatabaseService";
 import { Entry } from "../types/entry";
 
 interface TomeItemProps {

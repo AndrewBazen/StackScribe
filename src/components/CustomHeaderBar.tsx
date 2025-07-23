@@ -14,6 +14,8 @@ import {
 } from '@radix-ui/react-icons';
 
 interface CustomHeaderBarProps {
+  onCreateArchive: () => void;
+  onSwitchArchive: () => void;
   onNewEntry: () => void;
   onNewTome: () => void;
   onSave: () => void;
@@ -28,6 +30,8 @@ interface CustomHeaderBarProps {
 }
 
 export default function CustomHeaderBar({
+  onCreateArchive,
+  onSwitchArchive,
   onNewEntry,
   onNewTome,
   onSave,
@@ -58,6 +62,8 @@ export default function CustomHeaderBar({
       {/* Left section: Menu and navigation */}
       <div className="header-left">
         <AppMenuBar
+          onCreateArchive={onCreateArchive}
+          onSwitchArchive={onSwitchArchive}
           onNewEntry={onNewEntry}
           onNewTome={onNewTome}
           onSave={onSave}

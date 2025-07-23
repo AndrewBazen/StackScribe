@@ -5,6 +5,9 @@ console.log('🖥️ DESKTOP MAIN.TSX LOADED - Desktop UI is starting!');
 console.log('Current URL:', window.location.href);
 console.log('User Agent:', navigator.userAgent);
 
+// TEMPORARILY DISABLED AUTHENTICATION
+// TO RE-ENABLE: Uncomment the section below and comment out the "DIRECT APP RENDERING" section
+/*
 import {
   PublicClientApplication,
   EventType,
@@ -40,4 +43,13 @@ msalInstance.initialize().then(() => {
     // </React.StrictMode>,
   ); 
 })
+*/
+
+// DIRECT APP RENDERING (NO AUTHENTICATION)
+// TO RE-ENABLE AUTH: Comment out this section and uncomment the section above
+import App from "./App";
+
+ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+  <App />
+);
 

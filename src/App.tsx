@@ -13,15 +13,16 @@ import { chunkMarkdown, persistClarityFindings, createDecorationExtension } from
 import CustomHeaderBar from "./components/CustomHeaderBar";
 import NewEntryPrompt from "./components/NewEntryPrompt";
 import NewTomePrompt from "./components/NewTomePrompt";
-import { 
-   CreateTome, CreateEntry, saveLocalEntry, saveAllEntries, exitApp,
-   OpenArchive, CreateArchive,
-   GetArchives,
-   } from "./Utils/AppUtils";
+import { exitApp } from "./Utils/AppUtils";
 import PreviewPanel from "./components/PreviewPanel";
 import { getSyncManager, SyncStatus } from "./lib/sync";
-import { getDb } from "./lib/db";
-import { getTomesByArchiveId, saveEntry, getEntriesByTomeId, deleteEntry } from "./stores/dataStore";
+import { 
+  initDatabase, testDatabase,
+  getAllArchives, getArchiveById, saveArchive, createArchive,
+  getTomesByArchiveId, saveTome, createTome,
+  getEntriesByTomeId, saveEntry, createEntry, deleteEntry,
+  bulkSaveArchives, bulkSaveTomes, bulkSaveEntries, clearAllData
+} from "./services/rustDatabaseService";
 import TabBar from "./components/TabBar";
 import logo from "../src-tauri/icons/icon.png";
 import Preferences from "./components/Preferences";
@@ -67,7 +68,7 @@ function App() {
   const [showPreferences, setShowPreferences] = useState<boolean>(false);
   // Azure Sync preference (persisted in localStorage)
   const [enableAzureSync, setEnableAzureSync] = useState<boolean>(() => {
-  const stored = localStorage.getItem('enableAzureSync');
+    const stored = localStorage.getItem('enableAzureSync');
     return stored ? JSON.parse(stored) : false;
   });
   // AI Link suggestions state
@@ -78,6 +79,7 @@ function App() {
   const isInitialized = useRef<boolean>(false);
   // Decorations for requirement clarity
   const [decorations, setDecorations] = useState<Extension[]>([]);
+
   // open an archive
   const handleArchiveOpen = async (selectedArchive: Archive) => {
     // Prevent archive opening if sync is not ready
@@ -87,7 +89,7 @@ function App() {
     }
 
     // set the archive
-    setArchive(await OpenArchive(selectedArchive));
+    setArchive(selectedArchive);
 
     // get and set the tomes
     const openedTomes = await getTomesByArchiveId(selectedArchive.id);
@@ -108,27 +110,19 @@ function App() {
     }
 
     // Create the archive and persist it
-    const createdArchive = await CreateArchive(newArchive);
-    if (!createdArchive) {
-      console.error("Failed to create archive:", newArchive);
-      return;
-    }
+    const createdArchive = await createArchive(newArchive.name, newArchive.description || undefined);
+    await saveArchive(createdArchive);
     setArchive(createdArchive);
 
-    // Create a new tome in the archive using the proper NewTome function
-    const createdTome = await CreateTome(createdArchive, tomeName);
-    if (!createdTome) {
-      console.error("Failed to create tome: ", tomeName);
-      return;
-    }
+    // Create a new tome in the archive
+    const createdTome = await createTome(createdArchive.id, tomeName);
+    await saveTome(createdTome);
     setTomes([createdTome]);
     setTome(createdTome);
     
     // Create a default untitled entry in the new tome
-    const createdEntry = await CreateEntry(createdTome, "Untitled Entry", "generic");
-    if (!createdEntry) {
-      console.error("Failed to create entry: Untitled_Entry.md")
-    }
+    const createdEntry = await createEntry(createdTome.id, "Untitled Entry", "", "generic");
+    await saveEntry(createdEntry);
     setEntries([createdEntry]);
     setEntry(createdEntry);
     setTabbedEntries([...tabbedEntries, createdEntry]);
@@ -214,13 +208,13 @@ function App() {
     setMarkdown(e.content ?? "");
   };
 
-  // save the entry when the user presses Cmd+S/Ctrl+S
+  // save the entry when the user presses Ctrl+S
   const handleSave = useCallback(async () => {
       if (!entry) return;
       // Ensure entry timestamp is fresh so saveEntry persists the new content
       entry.updated_at = new Date().toISOString();
-      let result = await saveEntry(entry as Entry);
-      if (result) {
+      try {
+        await saveEntry(entry as Entry);
         // If the entry was saved successfully, remove it from dirty entries
         setDirtyEntries(prev => prev.filter(e => e.id !== (entry as Entry).id));
         console.log(`Entry ${entry?.name} saved successfully`);
@@ -228,19 +222,21 @@ function App() {
         for (var e of dirtyEntries) {
           console.log(`Entry: ${e.name}`);
         }
-      } else {
+      } catch (error) {
         // If the save failed, log an error
-        console.error("Failed to save entry ", entry?.name);
+        console.error("Failed to save entry ", entry?.name, error);
       }
   }, [entry, dirtyEntries]);
 
   const handleSaveAll = async () => {
-    setDirtyEntries(await saveAllEntries(dirtyEntries as Entry[]));
+    // Save all dirty entries using bulk save
+    await bulkSaveEntries(dirtyEntries as Entry[]);
+    setDirtyEntries([]);
   };
 
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleEntryChanged = useCallback(async (content: string) => {
+  const handleEntryChanged = async (content: string) => {
      // update markdown shown in preview
      setMarkdown(content);
 
@@ -261,24 +257,26 @@ function App() {
        clearTimeout(saveTimeout.current);
      }
      saveTimeout.current = setTimeout(async () => {
-       const result = await saveLocalEntry(entry);
-       if (result) {
-         // Only remove from dirty list if save was successful
+       try {
+         await saveEntry(entry);
          setDirtyEntries(prev => prev.filter(e => e.id !== entry.id));
-         console.log(`Auto-saved entry ${entry?.name}`);
+       } catch (error) {
+         console.error("Failed to save entry:", error);
        }
      }, 1000); // save 1s after typing stops
-   }, [entry]);
+   };
 
   //------ CREATE NEW TOME/ENTRY ------
 
   const handleNewTome = async (newTomeName: string) => {
     if (archive && !tomes.some(tome => tome.name === newTomeName)) {
-      const newTome = await CreateTome(archive as Archive, newTomeName);
-       setTomes([...tomes, newTome]);
-       setTome(newTome);
+      const newTome = await createTome(archive.id, newTomeName);
+      await saveTome(newTome);
+      setTomes([...tomes, newTome]);
+      setTome(newTome);
       // Automatically create a default entry in the new tome
-      const defaultEntry = await CreateEntry(newTome, "Untitled Entry", "generic");
+      const defaultEntry = await createEntry(newTome.id, "Untitled Entry", "", "generic");
+      await saveEntry(defaultEntry);
       setEntries([defaultEntry]);
       setEntry(defaultEntry);
       setTabbedEntries([...tabbedEntries, defaultEntry]);
@@ -290,10 +288,11 @@ function App() {
   const handleNewEntry = async (newEntryName: string, entry_type: "generic" | "requirement" | "specification" | "meeting" | "design" | "implementation" | "test" | "other") => {
     //
     if (tome && !entries.some(e => e.name === newEntryName)) {
-      const newEntry = await CreateEntry(tome, newEntryName, entry_type);
-       setEntries([...entries, newEntry]);
-       setEntry(newEntry);
-       handleCreateTab(newEntry);
+      const newEntry = await createEntry(tome.id, newEntryName, "", entry_type);
+      await saveEntry(newEntry);
+      setEntries([...entries, newEntry]);
+      setEntry(newEntry);
+      handleCreateTab(newEntry);
       setMarkdown(newEntry.content || "");
       handleShowEntryPrompt(false);
     }
@@ -463,34 +462,25 @@ function App() {
   };
 
   const handleRenameConfirm = async (newName: string) => {
-    if (!entryToRename || !newName || newName === entryToRename.name) return;
+    if (!entryToRename) return;
     
-    // Create updated entry with new name and fresh timestamp
-    const updatedEntry = { 
-      ...entryToRename, 
-      name: newName, 
-      updated_at: new Date().toISOString() 
-    };
+    const updatedEntry = { ...entryToRename, name: newName, updated_at: new Date().toISOString() };
     
-    // Save to database
-    const result = await saveEntry(updatedEntry);
-    if (!result) {
-      console.error("Failed to save renamed entry:", newName);
-      return;
+    try {
+      await saveEntry(updatedEntry);
+      
+      // Update local state
+      setEntries(prev => prev.map(e => e.id === updatedEntry.id ? updatedEntry : e));
+      setTabbedEntries(prev => prev.map(e => e.id === updatedEntry.id ? updatedEntry : e));
+      
+      if (entry?.id === updatedEntry.id) {
+        setEntry(updatedEntry);
+      }
+      
+      setEntryToRename(null);
+    } catch (error) {
+      console.error("Failed to rename entry:", error);
     }
-    
-    // Update state arrays
-    setEntries(entries.map((e) => e.id === entryToRename.id ? updatedEntry : e));
-    setTabbedEntries(tabbedEntries.map((t) => t.id === entryToRename.id ? updatedEntry : t));
-    
-    // Update current entry if it's the one being renamed
-    if (entry && entry.id === entryToRename.id) {
-      setEntry(updatedEntry);
-    }
-    
-    setEntryToRename(null);
-    
-    console.log(`Entry renamed to "${newName}" and saved successfully`);
   };
 
   // Delete an entry
@@ -500,28 +490,43 @@ function App() {
 
   const handleDeleteConfirm = async () => {
     if (!entryToDelete) return;
-    await deleteEntry(entryToDelete.id);
-    setEntries(entries.filter((e) => e.id !== entryToDelete.id));
-    setTabbedEntries(tabbedEntries.filter((e) => e.id !== entryToDelete.id));
-    if (activeTabId === entryToDelete.id) {
-      setActiveTabId(tabbedEntries[0]?.id || null);
-      setEntry(tabbedEntries[0] || null);
-      setMarkdown(tabbedEntries[0]?.content || "");
+    
+    try {
+      // Remove from database
+      await deleteEntry(entryToDelete.id);
+      setEntries(prev => prev.filter(e => e.id !== entryToDelete.id));
+      setTabbedEntries(prev => prev.filter(e => e.id !== entryToDelete.id));
+      
+      if (activeTabId === entryToDelete.id) {
+        const remaining = tabbedEntries.filter(e => e.id !== entryToDelete.id);
+        if (remaining.length > 0) {
+          const newActive = remaining[remaining.length - 1];
+          setActiveTabId(newActive.id);
+          setEntry(newActive);
+          setMarkdown(newActive.content ?? "");
+        } else {
+          setActiveTabId(null);
+          setEntry(null);
+          setMarkdown("");
+        }
+      }
+      
+      setEntryToDelete(null);
+    } catch (error) {
+      console.error("Failed to delete entry:", error);
     }
-    setEntryToDelete(null);
   };
 
   // Handle entry saving via keyboard shortcut
-  // This will save the current entry when the user presses Cmd+S (macOS) or Ctrl+S (Windows/Linux)
+  // This will save the current entry when the user presses Ctrl+S
   useEffect(() => {
     const handleKeyDown = async (e: KeyboardEvent) => {
-      // Support both Cmd+S (macOS) and Ctrl+S (Windows/Linux)
       if ((e.metaKey || e.ctrlKey) && e.key === "s" && entry) {
-        e.preventDefault(); // Prevent browser's default save behavior
-        await handleSave(); // Use the existing handleSave function that manages dirty state
+        e.preventDefault();
+        await handleSave();
       }
     };
-    
+
     window.addEventListener("keydown", handleKeyDown);
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
@@ -558,24 +563,16 @@ function App() {
       try {
         console.log('🚀 Initializing StackScribe...');
         
-        // Initialize the database (migrations will run automatically via Tauri)
-        const db = await getDb();
-        
+        // Initialize the Rust database
+        await initDatabase();
         console.log("✅ Database initialization completed successfully!");
         
-        // Test basic database operations
+        // Test the database functionality
         try {
-          const tables = await db.select(`
-            SELECT name FROM sqlite_master 
-            WHERE type='table' AND name NOT LIKE 'sqlite_%'
-          `) as Array<{ name: string }>;
-          console.log('📊 Available tables:', tables);
-          
-          if (tables.length === 0) {
-            console.warn('⚠️ No tables found! Migration may have failed.');
-          }
-        } catch (tableError) {
-          console.error('❌ Failed to query tables:', tableError);
+          const testResult = await testDatabase();
+          console.log('🧪 Database test result:', testResult);
+        } catch (testError) {
+          console.error('❌ Database test failed:', testError);
         }
         
         // Initialize sync manager and wait for it to be ready
@@ -601,7 +598,6 @@ function App() {
         
       } catch (error) {
         console.error("❌ Failed to initialize app:", error);
-        console.error("🔧 Check console for Tauri migration logs");
         // Reset flag on error so retry is possible
         isInitialized.current = false;
         setSyncStatus({
@@ -621,7 +617,7 @@ function App() {
       if (!syncStatus.isReady) return;
       
       try {
-        const fetchedArchives = await GetArchives();
+        const fetchedArchives = await getAllArchives();
         setArchives(fetchedArchives);
       } catch (error) {
         console.error("Failed to fetch archives:", error);
@@ -639,7 +635,6 @@ function App() {
       setDecorations([]);
     }
   }, [entry]);
-
 
   useEffect(() => {
     const handleMove = (e: MouseEvent) => {
@@ -664,9 +659,6 @@ function App() {
     {/* STARTUP NOTIFICATION */}
     <StartupNotification />
 
-    {/* Initialize the app on first load */}
-    {/* This will set up the database and sync data from the server */}
-
     {/* PREFERENCES */}
     {showPreferences && <Preferences 
       themes={themes}
@@ -679,10 +671,56 @@ function App() {
       onToggleAzureSync={handleToggleAzureSync}
     />}
 
-    {/* NAME PROMPT */}
-    {ShowEntryPrompt && <NewEntryPrompt title="New Entry"  label="Entry Name" placeholder="Enter a name for the new entry" onClose={handleShowEntryPrompt} onConfirm={(name: string, entry_type: string) => { handleNewEntry(name, entry_type as "generic" | "requirement" | "specification" | "meeting" | "design" | "implementation" | "test" | "other"); handleShowEntryPrompt(false); }} />}
-    {ShowTomePrompt && <NewTomePrompt title="New Tome" label="Tome Name" placeholder="Enter a name for the new tome" onClose={handleShowTomePrompt} onConfirm={(name: string) => {handleNewTome(name); handleShowTomePrompt(false)}} />}
-  
+    {/* NEW ENTRY PROMPT */}
+    {ShowEntryPrompt && <NewEntryPrompt 
+      title="New Entry"
+      label="Entry Name"
+      placeholder="Enter a name for the new entry"
+      onClose={() => handleShowEntryPrompt(false)} 
+      onConfirm={(name: string, entry_type: string) => {
+        handleNewEntry(name, entry_type as "generic" | "requirement" | "specification" | "meeting" | "design" | "implementation" | "test" | "other");
+        handleShowEntryPrompt(false);
+      }} 
+    />}
+
+    {/* NEW TOME PROMPT */}
+    {ShowTomePrompt && <NewTomePrompt 
+      title="New Tome"
+      label="Tome Name"
+      placeholder="Enter a name for the new tome"
+      onClose={() => handleShowTomePrompt(false)} 
+      onConfirm={(name: string) => {
+        handleNewTome(name);
+        handleShowTomePrompt(false);
+      }} 
+    />}
+
+    {/* RENAME ENTRY PROMPT */}
+    {entryToRename && (
+      <NewEntryPrompt
+        title="Rename Entry"
+        label="Entry Name"
+        placeholder="Enter a new name for the entry"
+        onClose={() => setEntryToRename(null)}
+        onConfirm={(newName: string, entry_type: string) => {
+          handleRenameConfirm(newName);
+        }}
+      />
+    )}
+
+    {/* DELETE ENTRY CONFIRMATION */}
+    {entryToDelete && (
+      <div className="modal-overlay">
+        <div className="modal">
+          <h3>Delete Entry</h3>
+          <p>Are you sure you want to delete "{entryToDelete.name}"?</p>
+          <div className="modal-buttons">
+            <button onClick={() => setEntryToDelete(null)}>Cancel</button>
+            <button onClick={handleDeleteConfirm} className="danger">Delete</button>
+          </div>
+        </div>
+      </div>
+    )}
 
     {/* START WINDOW */}
     <StartWindow 
@@ -694,6 +732,8 @@ function App() {
 
     {/* CUSTOM HEADER BAR */}
     <CustomHeaderBar
+      onCreateArchive={() => handleShowTomePrompt(true)}
+      onSwitchArchive={() => {}}
       onNewEntry={() => handleShowEntryPrompt(true)}
       onNewTome={() => handleShowTomePrompt(true)}
       onSave={handleSave}
@@ -738,12 +778,8 @@ function App() {
           <EntryView 
             entries={entries} 
             onEntryClick={handleEntryClick} 
-            onRenameEntry={(e: Entry) => {
-              handleRenameEntry(e);
-            }}
-            onDeleteEntry={(e: Entry) => {
-              handleDeleteEntry(e);
-            }}
+            onRenameEntry={handleRenameEntry}
+            onDeleteEntry={handleDeleteEntry}
           />
         </div>
       )}

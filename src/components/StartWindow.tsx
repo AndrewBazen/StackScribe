@@ -55,10 +55,10 @@ export default function StartWindow(props: {
     }
 
     return (
-        <Dialog.Root open={isOpen} onOpenChange={setIsOpen}>
+        <Dialog.Root open={isOpen} onOpenChange={setIsOpen} modal={true}>
             <Dialog.Portal>
                 <Dialog.Overlay className="dialog-overlay" />
-                <Dialog.Content className="dialog-content" >
+                <Dialog.Content className="dialog-content" onInteractOutside={(e) => e.preventDefault()}>
                     <div className="dialog-header">
                         <img src={logo} alt="StackScribe Logo" className="dialog-logo" width={100} height={100}/>
                         <Dialog.Title className="dialog-title">Welcome to StackScribe!</Dialog.Title>

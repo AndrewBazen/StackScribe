@@ -1,6 +1,6 @@
 import { Decoration, DecorationSet, EditorView } from "@codemirror/view";
 import { StateEffect, StateField } from "@codemirror/state";
-import { getDb } from "../lib/db";
+import { persistClarityFindings as persistClarityFindingsToDb } from "../services/rustDatabaseService";
 import type { Chunk } from "../types/Chunk";
 import type { Finding } from "../types/finding";
 import type { Requirement } from "../types/requirement";
@@ -72,37 +72,22 @@ export function createDecorationExtension(findings: Finding[]) {
 }
 
 export async function persistClarityFindings(entryId: string, chunks: Chunk[], findings: Finding[]) {
-    const db = await getDb();
-
     try {
-        await db.execute(
-            `BEGIN TRANSACTION`
-        );
-        await db.execute(
-            `DELETE FROM requirement_chunk WHERE note_id = ?`,
-            [entryId]
-        );
-        await db.execute(
-            `DELETE FROM ambiguity_finding WHERE chunk_id IN (SELECT chunk_id FROM requirement_chunk WHERE note_id = ?)`,
-            [entryId]
-        );
-        for (const chunk of chunks) {
-            await db.execute(
-                `INSERT OR IGNORE INTO requirement_chunk (note_id, text, start_offset, end_offset) VALUES (?, ?, ?, ?)`,
-                [entryId, chunk.text, chunk.start_offset, chunk.end_offset]
-            );
-        }
-        for (const finding of findings) {
-            await db.execute(
-                `INSERT OR IGNORE INTO ambiguity_finding (chunk_id, kind, phrase, suggested_rewrite, clarifying_q, severity) VALUES (?, ?, ?, ?, ?, ?)`,
-                [finding.start_offset, finding.kind, finding.suggestedRewrite, finding.suggestedRewrite, finding.suggestedRewrite, 1]
-            );
-        }
-        await db.execute(`COMMIT`);
-    }
-    catch (error) {
+        const chunksData = chunks.map(c => ({
+            text: c.text,
+            start_offset: c.start_offset,
+            end_offset: c.end_offset
+        }));
+        
+        const findingsData = findings.map(f => ({
+            kind: f.kind,
+            suggestedRewrite: f.suggestedRewrite,
+            severity: 1
+        }));
+        
+        await persistClarityFindingsToDb(entryId, chunksData, findingsData);
+    } catch (error) {
         console.error("Error persisting clarity findings:", error);
-        await db.execute(`ROLLBACK`);
     }
 }
 

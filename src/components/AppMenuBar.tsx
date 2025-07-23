@@ -1,6 +1,9 @@
 import * as MenuBar from "@radix-ui/react-menubar";
+import { Archive } from "../types/archive";
 
 type AppMenuBarProps = {
+    onCreateArchive: (newArchive: Archive, archiveName: string) => void;
+    onSwitchArchive: () => void;
     onNewTome: () => void;
     onNewEntry: () => void;
     onSave: () => void;
@@ -9,8 +12,23 @@ type AppMenuBarProps = {
     onPreferences: () => void;
 }
 
-export function AppMenuBar({ onNewTome, onNewEntry, onSave, onSaveAll, onClose, onPreferences }: AppMenuBarProps) {  
-    
+export function AppMenuBar({ onCreateArchive, onSwitchArchive, onNewTome, onNewEntry, onSave, onSaveAll, onClose, onPreferences }: AppMenuBarProps) {  
+
+    const handleCreateArchive = () => {
+        const archiveName = prompt("Enter a name for the new archive");
+        if (archiveName) {
+            onCreateArchive(
+            {
+                id: "",
+                name: archiveName,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            },
+                archiveName
+            );
+        }
+    }
+
 return (
     <MenuBar.Root>
             <MenuBar.Menu>
@@ -23,6 +41,12 @@ return (
                     sideOffset={5}
                     side="top"
                 >
+                    <MenuBar.Item>
+                    <MenuBar.Label className="menubar-label" onClick={handleCreateArchive}>Create Archive</MenuBar.Label>
+                    </MenuBar.Item>
+                    <MenuBar.Item>
+                    <MenuBar.Label className="menubar-label" onClick={onSwitchArchive}>Open Archive</MenuBar.Label>
+                    </MenuBar.Item>
                     <MenuBar.Item>
                     <MenuBar.Label className="menubar-label" onClick={onNewTome}>New Tome</MenuBar.Label>
                     </MenuBar.Item>
@@ -44,6 +68,26 @@ return (
                     <MenuBar.Label className="menubar-label" onClick={onClose}>Close</MenuBar.Label>
                     </MenuBar.Item>
                 </MenuBar.Content>
+                </MenuBar.Portal>
+            </MenuBar.Menu>
+            <MenuBar.Menu>
+                <MenuBar.Trigger className="menubar-trigger">Edit</MenuBar.Trigger>
+                <MenuBar.Portal>
+                    <MenuBar.Content 
+                        className="menubar-content" 
+                        align="start" 
+                        alignOffset={-3} 
+                        sideOffset={5} 
+                        side="top"
+                    >
+                        <MenuBar.Item>
+                            <MenuBar.Label className="menubar-label">Undo</MenuBar.Label>
+                        </MenuBar.Item>
+                        <MenuBar.Item>
+                            <MenuBar.Label className="menubar-label">Redo</MenuBar.Label>
+                        </MenuBar.Item>
+                        <MenuBar.Separator className="menubar-separator" />
+                    </MenuBar.Content>
                 </MenuBar.Portal>
             </MenuBar.Menu>
         </MenuBar.Root>

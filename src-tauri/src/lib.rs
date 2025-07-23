@@ -1,16 +1,31 @@
-use std::{path::{PathBuf}, process::{Command, Stdio, Child}, sync::Mutex};
-use tauri::Emitter;
+use std::{process::{Command, Stdio}};
+use tauri::{Manager, Emitter};
 
-// AI service now handled via Python HTTP API
+mod database;
+mod commands;
+mod ai_commands;
 
-// Global state for managing Python service
-static PYTHON_SERVICE: Mutex<Option<Child>> = Mutex::new(None);
+use ai_commands::{startup_ai_service, start_ai_service_internal};
+
+// import commands for database
+use commands::{DbState, init_database, get_all_archives, get_archive_by_id, save_archive, 
+               get_tomes_by_archive_id, save_tome, get_entries_by_tome_id, save_entry,
+               bulk_save_archives, bulk_save_tomes, bulk_save_entries, clear_all_data,
+               create_archive, create_tome, create_entry, test_database, delete_entry,
+               persist_clarity_findings};
+
 
 // --------- app commands ---------
 // test round trip
 #[tauri::command]
 async fn echo(input: String) -> String {
     input.chars().rev().collect() //test round trip
+}
+
+// exit app command
+#[tauri::command]
+async fn exit_app() -> Result<(), String> {
+    std::process::exit(0);
 }
 
 // run code inline in the editor
@@ -34,235 +49,6 @@ async fn get_current_dir() -> Result<String, String> {
     Ok(current_dir)
 }
 
-// AI services are now handled via Python HTTP API
-// Use start_python_service, stop_python_service, and python_service_status instead
-
-// Start AI service containers
-#[tauri::command]
-async fn start_python_service() -> Result<serde_json::Value, String> {
-    start_ai_service_internal().await
-}
-
-// Internal function to start AI service (used by startup and manual commands)
-async fn start_ai_service_internal() -> Result<serde_json::Value, String> {
-    // Check if containers are already running (without holding the lock)
-    let status_result = check_containers_status().await;
-    if let Ok(status) = &status_result {
-        if status.get("is_running").and_then(|v| v.as_bool()).unwrap_or(false) {
-            return Ok(serde_json::json!({
-                "status": "already_running",
-                "message": "AI service containers are already running"
-            }));
-        }
-    }
-    
-    // Try to start the AI service using Docker Compose
-    let child = Command::new("bash")
-        .arg("stackscribe-ai-service/docker-start.sh")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Failed to start AI service: {}", e))?;
-    
-    // Now acquire the lock to store the child process
-    {
-        let mut service = PYTHON_SERVICE.lock().map_err(|e| e.to_string())?;
-        *service = Some(child);
-    }
-    
-    Ok(serde_json::json!({
-        "status": "started",
-        "message": "AI service containers are starting up..."
-    }))
-}
-
-// Helper function to check container status
-async fn check_containers_status() -> Result<serde_json::Value, String> {
-    let containers_output = Command::new("docker-compose")
-        .arg("-f")
-        .arg("stackscribe-ai-service/docker-compose.yml")
-        .arg("ps")
-        .arg("-q")
-        .output()
-        .map_err(|e| format!("Failed to check container status: {}", e))?;
-    
-    let containers_running = !containers_output.stdout.is_empty();
-    
-    Ok(serde_json::json!({
-        "is_running": containers_running
-    }))
-}
-
-// Startup function to auto-start AI service
-#[tauri::command]
-async fn startup_ai_service() -> Result<serde_json::Value, String> {
-    println!("🚀 Starting AI service on app startup...");
-    
-    // Check if Docker is available
-    let docker_check = Command::new("docker")
-        .arg("info")
-        .output();
-    
-    match docker_check {
-        Ok(output) if output.status.success() => {
-            println!("✅ Docker is available, starting AI service...");
-            
-            // Start the AI service in the background
-            match start_ai_service_internal().await {
-                Ok(result) => {
-                    println!("🤖 AI service startup initiated");
-                    Ok(serde_json::json!({
-                        "status": "success",
-                        "message": "AI service startup initiated",
-                        "auto_started": true,
-                        "details": result
-                    }))
-                },
-                Err(e) => {
-                    println!("⚠️ Failed to start AI service on startup: {}", e);
-                    Ok(serde_json::json!({
-                        "status": "error",
-                        "message": format!("Failed to auto-start AI service: {}", e),
-                        "auto_started": false
-                    }))
-                }
-            }
-        },
-        _ => {
-            println!("⚠️ Docker not available, skipping AI service auto-start");
-            Ok(serde_json::json!({
-                "status": "skipped",
-                "message": "Docker not available, AI service not started",
-                "auto_started": false
-            }))
-        }
-    }
-}
-
-// Stop AI service using Docker Compose
-#[tauri::command]
-async fn stop_python_service() -> Result<serde_json::Value, String> {
-    let mut service = PYTHON_SERVICE.lock().map_err(|e| e.to_string())?;
-    
-    // Use docker-compose down to stop services properly
-    let output = Command::new("docker-compose")
-        .arg("-f")
-        .arg("stackscribe-ai-service/docker-compose.yml")
-        .arg("down")
-        .output()
-        .map_err(|e| format!("Failed to execute docker-compose down: {}", e))?;
-    
-    if output.status.success() {
-        // Clear the tracked process since we stopped via docker-compose
-        if service.is_some() {
-            *service = None;
-        }
-        
-        Ok(serde_json::json!({
-            "status": "stopped",
-            "message": "AI service containers stopped successfully"
-        }))
-    } else {
-        let error_msg = String::from_utf8_lossy(&output.stderr);
-        Ok(serde_json::json!({
-            "status": "error",
-            "message": format!("Failed to stop containers: {}", error_msg)
-        }))
-    }
-}
-
-// Check AI service status using Docker Compose
-#[tauri::command]
-async fn python_service_status() -> Result<serde_json::Value, String> {
-    // Check if Docker containers are running
-    let containers_output = Command::new("docker-compose")
-        .arg("-f")
-        .arg("stackscribe-ai-service/docker-compose.yml")
-        .arg("ps")
-        .arg("-q")
-        .output()
-        .map_err(|e| format!("Failed to check container status: {}", e))?;
-    
-    let containers_running = !containers_output.stdout.is_empty();
-    
-    // Check if services are responding via HTTP
-    let mut qdrant_healthy = false;
-    let mut ai_service_healthy = false;
-    
-    if containers_running {
-        // Check Qdrant health
-        if let Ok(response) = reqwest::get("http://localhost:6333/").await {
-            qdrant_healthy = response.status().is_success();
-        }
-        
-        // Check AI service health
-        if let Ok(response) = reqwest::get("http://localhost:8000/health").await {
-            if response.status().is_success() {
-                if let Ok(data) = response.json::<serde_json::Value>().await {
-                    ai_service_healthy = data.get("status").and_then(|s| s.as_str()) == Some("healthy");
-                }
-            }
-        }
-    }
-    
-    Ok(serde_json::json!({
-        "is_running": containers_running,
-        "is_healthy": ai_service_healthy && qdrant_healthy,
-        "services": {
-            "qdrant": {
-                "running": containers_running,
-                "healthy": qdrant_healthy,
-                "endpoint": "http://localhost:6333"
-            },
-            "ai_service": {
-                "running": containers_running,
-                "healthy": ai_service_healthy,
-                "endpoint": "http://localhost:8000"
-            }
-        }
-    }))
-}
-
-// fn get_absolute_path_migration(path: &str) -> PathBuf {
-//     // Get the current working directory
-//     let cwd = std::env::current_dir()
-//         .map(|p| p.to_string_lossy().to_string())
-//         .unwrap_or_else(|_| "unknown".to_string());
-//     if path.starts_with('/') || path.starts_with('\\') {
-//         return PathBuf::from(path);
-//     }
-//     let absolute_path = std::path::Path::new(&cwd).join(path);
-//     return absolute_path;
-// }   
-
-
-// --------- stripe api ---------
-
-// Stripe functionality temporarily disabled
-/*
-#[tauri::command]
-async fn create_checkout_session_tauri(user_id: String) -> Result<String, String> {
-    use std::sync::Arc;
-    use stripe::Client;
-    use stripe_api::{AppState, CheckoutRequest, CheckoutResponse};
-    use axum::{extract::State, Json};
-    
-    let stripe_key = std::env::var("STRIPE_SECRET_KEY").map_err(|e| e.to_string())?;
-    let client = Client::new(stripe_key);
-    let app_state = Arc::new(AppState { stripe: client });
-    
-    // Create the request payload
-    let request = CheckoutRequest { user_id };
-    
-    // Call the function with proper axum types
-    let state = State(app_state);
-    let json_request = Json(request);
-    
-    let response = stripe_api::create_checkout_session(state, json_request).await?;
-    Ok(response.0.checkout_url)
-}
-*/
-
 
 
 
@@ -271,61 +57,31 @@ async fn create_checkout_session_tauri(user_id: String) -> Result<String, String
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
 
-    // Stripe temporarily disabled
-    /*
-    const enable_stripe: bool = true;
-
-    if enable_stripe {
-        // init stripe
-        use std::sync::Arc;
-        use stripe::Client;
-        use stripe_api::{AppState, create_checkout_session};
-
-        let stripe_key = std::env::var("STRIPE_SECRET_KEY")
-            .expect("STRIPE_SECRET_KEY must be set");
-
-        let stripe_client = Client::new(stripe_key);
-        let app_state = Arc::new(AppState { stripe: stripe_client });
-    }
-    */
-
-
-    // Embed the migration SQL at compile-time so it’s always available, even on mobile
-    // where the external file isn’t packaged inside the APK.
-    const INITIAL_SCHEMA_SQL: &str = include_str!("../../data/migrations/001_initial_schema.sql");
-    const REQUIREMENT_CLARITY_SQL: &str = include_str!("../../data/migrations/002_add_requirement_clarity.sql");
-    println!("📄 Embedded initial schema SQL length: {} bytes", INITIAL_SCHEMA_SQL.len());
-    println!("📄 Embedded requirement clarity SQL length: {} bytes", REQUIREMENT_CLARITY_SQL.len());
- 
-    let migrations = vec![
-        tauri_plugin_sql::Migration {
-            version: 1,
-            sql: INITIAL_SCHEMA_SQL,
-            description: "Initial schema",
-            kind: tauri_plugin_sql::MigrationKind::Up,
-        },
-        tauri_plugin_sql::Migration {
-            version: 2,
-            sql: REQUIREMENT_CLARITY_SQL,
-            description: "Add requirement clarity",
-            kind: tauri_plugin_sql::MigrationKind::Up,
-        },
-    ];
+    println!("🚀 Starting StackScribe with Rust database backend...");
     
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_sql::Builder::default()
-            .add_migrations("sqlite:stackscribe.db", migrations)
-            .build())
+        .manage(DbState::default())
         .setup(|app| {
-            // Auto-start AI service on app startup
+            // Initialize database on app startup
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
+                // Initialize the database first
+                match init_database(app_handle.state::<DbState>()).await {
+                    Ok(_) => {
+                        println!("✅ Database initialized successfully");
+                    },
+                    Err(e) => {
+                        println!("❌ Database initialization failed: {}", e);
+                    }
+                }
+                
                 // Give the app a moment to fully initialize
                 tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
                 
+                // Auto-start AI service on app startup
                 match startup_ai_service().await {
                     Ok(result) => {
                         println!("AI service startup result: {}", result);
@@ -352,15 +108,35 @@ pub fn run() {
             
             Ok(())
         })
+        // invoke handler
         .invoke_handler(tauri::generate_handler![
+            // app commands
             echo,
+            exit_app,
             run_code,
             get_current_dir,
-            start_python_service,
-            stop_python_service,
-            python_service_status,
+            // AI service commands
             startup_ai_service,
-            // create_checkout_session_tauri,  // Stripe temporarily disabled
+            start_ai_service_internal,
+            // Database commands
+            init_database,
+            test_database,
+            get_all_archives,
+            get_archive_by_id,
+            save_archive,
+            get_tomes_by_archive_id,
+            save_tome,
+            get_entries_by_tome_id,
+            save_entry,
+            delete_entry,
+            persist_clarity_findings,
+            bulk_save_archives,
+            bulk_save_tomes,
+            bulk_save_entries,
+            clear_all_data,
+            create_archive,
+            create_tome,
+            create_entry,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
