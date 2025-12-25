@@ -75,7 +75,7 @@ const commandHandlers = {
 
       // Generate requirements
       const chunks = chunkMarkdown(content);
-      const requirements = await generateRequirements(chunks);
+      const requirements = await generateRequirements(chunks, prompt);
       
       // Format requirements as markdown
       let requirementsText = "\n\n## Generated Requirements\n\n";

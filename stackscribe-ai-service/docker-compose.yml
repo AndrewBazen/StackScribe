@@ -16,6 +16,14 @@ services:
     # statuses even when the service is running. Our host-level checks (and the Tauri app)
     # validate Qdrant availability via HTTP instead.
 
+  ollama:
+    image: ollama/ollama:latest
+    container_name: stackscribe-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+    restart: unless-stopped
   ai-service:
     build:
       context: .
@@ -28,6 +36,9 @@ services:
     environment:
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
+      - REQ_LLM_BASE_URL=http://ollama:11434/v1
+      - REQ_LLM_API_KEY=local-api-key
+      - REQ_LLM_MODEL=llama3.1:8b-instruct
       - EMBED_MODEL=nomic-ai/nomic-embed-text-v1
       - RERANKER_ID=BAAI/bge-reranker-base
       - THRESHOLD=0.05
@@ -46,6 +57,8 @@ services:
 
 volumes:
   qdrant_storage:
+    driver: local
+  ollama:
     driver: local
 
 networks:
