@@ -38,7 +38,7 @@ services:
       - QDRANT_PORT=6333
       - REQ_LLM_BASE_URL=http://ollama:11434/v1
       - REQ_LLM_API_KEY=local-api-key
-      - REQ_LLM_MODEL=llama3.1:8b-instruct
+      - REQ_LLM_MODEL=llama3.1:8b
       - EMBED_MODEL=nomic-ai/nomic-embed-text-v1
       - RERANKER_ID=BAAI/bge-reranker-base
       - THRESHOLD=0.05

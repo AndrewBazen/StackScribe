@@ -8,6 +8,8 @@ TOP_K       = int(os.getenv("TOP_K", "8"))
 COLLECTION  = os.getenv("COLLECTION", "note_chunks")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-ai/nomic-embed-text-v1")
 RERANKER_ID = os.getenv("RERANKER_ID", "BAAI/bge-reranker-base")
+CHUNK_TOKENS = 200
+BATCH_SIZE = 1_000
 
 # ---------- Qdrant connection config ----------
 QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
@@ -27,11 +29,6 @@ VAGUE_TERMS = [
 ]
 QUANTIFIERS = ["some", "many", "few", "often", "usually", "sometimes", "generally", "various"]
 TBD_TOKENS = ["tbd", "todo", "to-do", "fixme"]
-
-# -------- Embedding constants --------
-EMBED_MODEL = "nomic-ai/nomic-embed-text-v1"
-CHUNK_TOKENS = 200
-BATCH_SIZE = 1_000
 
 # -------- Database constants --------
 if os.path.exists("/app/stackscribe.db"):
