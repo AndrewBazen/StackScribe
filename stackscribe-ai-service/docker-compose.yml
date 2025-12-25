@@ -11,12 +11,10 @@ services:
       - QDRANT__SERVICE__HTTP_PORT=6333
       - QDRANT__SERVICE__GRPC_PORT=6334
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+    # Note: We intentionally omit a container-level healthcheck here because the upstream
+    # Qdrant image does not reliably include curl/wget, which can produce false "unhealthy"
+    # statuses even when the service is running. Our host-level checks (and the Tauri app)
+    # validate Qdrant availability via HTTP instead.
 
   ai-service:
     build:

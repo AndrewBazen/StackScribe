@@ -89,4 +89,4 @@ else
     echo "📋 Logs:"
     docker-compose -f "$COMPOSE_FILE" logs qdrant
     exit 1
-fi 
+fi

@@ -1,12 +1,14 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Tuple
+from typing import List, Optional
 from sentence_transformers import SentenceTransformer, CrossEncoder
 from qdrant_client import QdrantClient, models
 import pathlib
 import heuristics
 import os
+import re
+import uuid
 
 # ---------- Global config ----------
 THRESHOLD   = float(os.getenv("THRESHOLD", "0.05"))
@@ -51,11 +53,11 @@ async def ensure_collection_exists():
     except Exception as e:
         print(f"📝 Creating collection '{COLLECTION}'...")
         try:
-            # Create collection with appropriate vector size (nomic-embed-text-v1 uses 768 dimensions)
+            # Create collection with appropriate vector size
             client.create_collection(
                 collection_name=COLLECTION,
                 vectors_config=models.VectorParams(
-                    size=768,  # nomic-embed-text-v1 embedding size
+                    size=embedder.get_sentence_embedding_dimension(),
                     distance=models.Distance.COSINE
                 )
             )
@@ -65,12 +67,67 @@ async def ensure_collection_exists():
 
 class LinkSuggestionRequest(BaseModel):
     text: str
-    current_note: str
+    current_entry_id: str
 
 class LinkSuggestion(BaseModel):
-    note: str
+    entry_id: str
+    entry_name: str
     score: float
     reasoning: str
+
+# -------- Indexing models --------
+class EntryToIndex(BaseModel):
+    entry_id: str
+    entry_name: str
+    content: str
+    archive_id: Optional[str] = None
+    tome_id: Optional[str] = None
+
+class IndexEntriesRequest(BaseModel):
+    entries: List[EntryToIndex]
+
+# ---------- Chunking helpers ----------
+def _strip_markdown(text: str) -> str:
+    """Best-effort markdown -> plain text (very lightweight)."""
+    # Remove code fences content markers but keep text
+    text = re.sub(r"```[\s\S]*?```", lambda m: re.sub(r"^```.*\n|\n```$", "", m.group(0)), text)
+    # Inline code/backticks
+    text = re.sub(r"`([^`]+)`", r"\1", text)
+    # Links: [text](url) -> text
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    # Emphasis markers
+    text = re.sub(r"[*_]{1,3}", "", text)
+    return text
+
+def _chunk_text(text: str, *, max_tokens: int = 200) -> List[str]:
+    """Chunk plain text into ~max_tokens whitespace tokens."""
+    cleaned = _strip_markdown(text).strip()
+    if not cleaned:
+        return []
+
+    # Split on blank lines first, then token-pack
+    paras = [p.strip() for p in re.split(r"\n\s*\n", cleaned) if p.strip()]
+    chunks: List[str] = []
+    buf: List[str] = []
+    tok = 0
+    for para in paras:
+        words = para.split()
+        if not words:
+            continue
+        # If a single paragraph is huge, stream it
+        for w in words:
+            buf.append(w)
+            tok += 1
+            if tok >= max_tokens:
+                chunks.append(" ".join(buf))
+                buf, tok = [], 0
+        # Paragraph boundary: if buffer is already sizable, flush to keep boundaries somewhat intact
+        if tok >= max_tokens * 0.75:
+            chunks.append(" ".join(buf))
+            buf, tok = [], 0
+    if buf:
+        chunks.append(" ".join(buf))
+    return chunks
 
 # ---------- Helper ----------
 def _vector(text: str, is_query: bool = False):
@@ -154,7 +211,7 @@ def suggest_links(para: str, current_note: str) -> list[tuple[str, float]]:
 
     boosted = []
     for hit, base in raw_hits:
-        note_title = pathlib.Path(hit.payload["note"]).stem
+        note_title = hit.payload.get("entry_name", "")
         text       = hit.payload["text"]
 
         # 2) apply heuristics
@@ -164,15 +221,20 @@ def suggest_links(para: str, current_note: str) -> list[tuple[str, float]]:
         bonus += heuristics.slug_fuzzy_bonus(para, note_title)
         bonus += heuristics.code_symbol_bonus(para, text)
 
-        boosted.append((hit.payload["note"], base + bonus))
+        boosted.append((hit.payload.get("entry_id", ""), hit.payload.get("entry_name", ""), base + bonus))
 
     # 3) dedupe, drop self, sort
-    candidates = [
-        (note, score) for note, score in boosted
-        if note != current_note and score > THRESHOLD
-    ]
+    seen = set()
+    candidates = []
+    for entry_id, entry_name, score in boosted:
+        if not entry_id or entry_id == current_note or score <= THRESHOLD:
+            continue
+        if entry_id in seen:
+            continue
+        seen.add(entry_id)
+        candidates.append((entry_id, entry_name, score))
     
-    candidates.sort(key=lambda t: -t[1])       # descending by score
+    candidates.sort(key=lambda t: -t[2])       # descending by score
     return candidates[:TOP_K]
 
 # ---------- API Endpoints ----------
@@ -229,12 +291,13 @@ async def health_check():
 async def get_suggestions(request: LinkSuggestionRequest):
     """Get AI-powered link suggestions"""
     try:
-        suggestions = suggest_links(request.text, request.current_note)
+        suggestions = suggest_links(request.text, request.current_entry_id)
         
         result = []
-        for note, score in suggestions:
+        for entry_id, entry_name, score in suggestions:
             result.append(LinkSuggestion(
-                note=note,
+                entry_id=entry_id,
+                entry_name=entry_name,
                 score=score,
                 reasoning=f"Vector similarity + cross-encoder reranking + heuristics (score: {score:.3f})"
             ))
@@ -247,6 +310,78 @@ async def get_suggestions(request: LinkSuggestionRequest):
     except Exception as e:
         print(f"❌ Error in get_suggestions: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get suggestions: {str(e)}")
+
+@app.post("/api/index_entries")
+async def index_entries(request: IndexEntriesRequest):
+    """
+    Index (or re-index) entries into Qdrant so suggestions have data.
+
+    Behavior:
+    - Deletes existing points for an entry_id
+    - Chunks content and upserts new points
+    """
+    try:
+        total_chunks = 0
+        indexed_entries = 0
+
+        for entry in request.entries:
+            entry_id = entry.entry_id.strip()
+            if not entry_id:
+                continue
+
+            # Delete existing points for this entry_id
+            try:
+                client.delete(
+                    collection_name=COLLECTION,
+                    points_selector=models.FilterSelector(
+                        filter=models.Filter(
+                            must=[
+                                models.FieldCondition(
+                                    key="entry_id",
+                                    match=models.MatchValue(value=entry_id),
+                                )
+                            ]
+                        )
+                    ),
+                )
+            except Exception as delete_err:
+                # Non-fatal (e.g. older Qdrant versions / no matches)
+                print(f"⚠️ Failed to delete existing points for {entry_id}: {delete_err}")
+
+            chunks = _chunk_text(entry.content)
+            if not chunks:
+                continue
+
+            points = []
+            for idx, chunk in enumerate(chunks):
+                points.append(
+                    models.PointStruct(
+                        id=str(uuid.uuid4()),
+                        payload={
+                            "entry_id": entry_id,
+                            "entry_name": entry.entry_name,
+                            "archive_id": entry.archive_id,
+                            "tome_id": entry.tome_id,
+                            "chunk_id": idx,
+                            "text": chunk,
+                        },
+                        vector=_vector(chunk, is_query=False),
+                    )
+                )
+
+            client.upsert(collection_name=COLLECTION, points=points)
+            total_chunks += len(points)
+            indexed_entries += 1
+
+        return {
+            "status": "ok",
+            "indexed_entries": indexed_entries,
+            "indexed_chunks": total_chunks,
+            "collection": COLLECTION,
+        }
+    except Exception as e:
+        print(f"❌ Error in index_entries: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to index entries: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

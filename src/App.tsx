@@ -73,6 +73,11 @@ function App() {
   const [aiSuggestions, setAiSuggestions] = useState<LinkSuggestion[]>([]);
   const [isLoadingAI, setIsLoadingAI] = useState<boolean>(false);
   const [showAISuggestions, setShowAISuggestions] = useState<boolean>(false);
+  const [aiMinMatch, setAiMinMatch] = useState<number>(() => {
+    const stored = localStorage.getItem('aiMinMatch');
+    const parsed = stored ? Number(stored) : NaN;
+    return Number.isFinite(parsed) ? Math.min(1, Math.max(0, parsed)) : 0.7; // default 70%
+  });
   // Track initialization to prevent multiple sync operations
   const isInitialized = useRef<boolean>(false);
   // Decorations for requirement clarity
@@ -227,6 +232,14 @@ function App() {
         for (var e of dirtyEntries) {
           console.log(`Entry: ${e.name}`);
         }
+
+        // Best-effort: keep local AI index up to date on explicit saves too.
+        if (tome) {
+          await aiLinkService.indexEntries([entry], { archiveId: archive?.id, tomeId: tome.id });
+          if (showAISuggestions) {
+            generateAISuggestions();
+          }
+        }
       } else {
         // If the save failed, log an error
         console.error("Failed to save entry ", entry?.name);
@@ -238,6 +251,8 @@ function App() {
   };
 
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const aiSuggestTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const indexedTomesRef = useRef<Set<string>>(new Set());
 
   const handleEntryChanged = async (content: string) => {
      // update markdown shown in preview
@@ -262,6 +277,20 @@ function App() {
      saveTimeout.current = setTimeout(async () => {
        await saveLocalEntry(entry);
        setDirtyEntries(prev => prev.filter(e => e.id !== entry.id));
+
+       // Keep local AI index fresh so suggestions actually have data.
+       // This is intentionally best-effort (failures shouldn't interrupt typing/saving).
+       if (tome) {
+         await aiLinkService.indexEntries([entry], { archiveId: archive?.id, tomeId: tome.id });
+       }
+
+       // If the AI suggestions panel is open, refresh suggestions shortly after indexing.
+       if (showAISuggestions) {
+         if (aiSuggestTimeout.current) clearTimeout(aiSuggestTimeout.current);
+         aiSuggestTimeout.current = setTimeout(() => {
+           generateAISuggestions();
+         }, 600);
+       }
      }, 1000); // save 1s after typing stops
    };
 
@@ -353,6 +382,16 @@ function App() {
     try {
       // Get all entries from the current tome to provide context
       const allEntries = await getEntriesByTomeId(tome.id);
+
+      // Ensure the current tome is indexed at least once so the AI has a corpus to search.
+      // (Without this, Qdrant is empty and the AI service will always return no suggestions.)
+      if (!indexedTomesRef.current.has(tome.id)) {
+        await aiLinkService.indexEntries(allEntries, { archiveId: archive?.id, tomeId: tome.id });
+        indexedTomesRef.current.add(tome.id);
+      } else {
+        // Still re-index the current entry (cheap) so suggestions track edits.
+        await aiLinkService.indexEntries([entry], { archiveId: archive?.id, tomeId: tome.id });
+      }
       
       const response = await aiLinkService.getSuggestions({
         currentEntry: entry,
@@ -440,6 +479,12 @@ function App() {
     if (!showAISuggestions && aiSuggestions.length === 0) {
       generateAISuggestions();
     }
+  };
+
+  const handleChangeAiMinMatch = (next: number) => {
+    const clamped = Math.min(1, Math.max(0, next));
+    setAiMinMatch(clamped);
+    localStorage.setItem('aiMinMatch', String(clamped));
   };
 
   // Show the entry prompt
@@ -747,6 +792,8 @@ function App() {
           <AILinkSuggestions
             suggestions={aiSuggestions}
             isLoading={isLoadingAI}
+            minMatch={aiMinMatch}
+            onChangeMinMatch={handleChangeAiMinMatch}
             onApplySuggestion={handleApplyAISuggestion}
             onDismissSuggestion={handleDismissAISuggestion}
             onRefreshSuggestions={generateAISuggestions}

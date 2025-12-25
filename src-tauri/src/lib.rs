@@ -1,4 +1,4 @@
-use std::{path::{PathBuf}, process::{Command, Stdio, Child}, sync::Mutex};
+use std::{process::{Command, Stdio, Child}, sync::Mutex};
 use tauri::Emitter;
 
 // AI service now handled via Python HTTP API
@@ -49,10 +49,15 @@ async fn start_ai_service_internal() -> Result<serde_json::Value, String> {
     let status_result = check_containers_status().await;
     if let Ok(status) = &status_result {
         if status.get("is_running").and_then(|v| v.as_bool()).unwrap_or(false) {
-            return Ok(serde_json::json!({
-                "status": "already_running",
-                "message": "AI service containers are already running"
-            }));
+            // If containers are running but don't support newer endpoints, restart to pick up updates.
+            if ai_service_supports_indexing().await {
+                return Ok(serde_json::json!({
+                    "status": "already_running",
+                    "message": "AI service containers are already running"
+                }));
+            } else {
+                println!("🔁 AI service is running but missing /api/index_entries; restarting containers to update...");
+            }
         }
     }
     
@@ -74,6 +79,19 @@ async fn start_ai_service_internal() -> Result<serde_json::Value, String> {
         "status": "started",
         "message": "AI service containers are starting up..."
     }))
+}
+
+// Check if the running AI service exposes the indexing endpoint (used by the desktop app)
+async fn ai_service_supports_indexing() -> bool {
+    // Use OpenAPI spec so we don't need to hit the endpoint itself (which can be expensive)
+    if let Ok(response) = reqwest::get("http://localhost:8000/openapi.json").await {
+        if response.status().is_success() {
+            if let Ok(body) = response.text().await {
+                return body.contains("\"/api/index_entries\"");
+            }
+        }
+    }
+    false
 }
 
 // Helper function to check container status

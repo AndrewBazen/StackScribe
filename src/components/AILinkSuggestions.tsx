@@ -5,6 +5,8 @@ import { Link2Icon, Cross2Icon, CheckIcon, LightningBoltIcon } from '@radix-ui/r
 interface AILinkSuggestionsProps {
   suggestions: LinkSuggestion[];
   isLoading: boolean;
+  minMatch: number; // 0..1
+  onChangeMinMatch: (next: number) => void;
   onApplySuggestion: (suggestion: LinkSuggestion) => void;
   onDismissSuggestion: (suggestion: LinkSuggestion) => void;
   onRefreshSuggestions: () => void;
@@ -13,11 +15,16 @@ interface AILinkSuggestionsProps {
 export default function AILinkSuggestions({
   suggestions,
   isLoading,
+  minMatch,
+  onChangeMinMatch,
   onApplySuggestion,
   onDismissSuggestion,
   onRefreshSuggestions,
 }: AILinkSuggestionsProps) {
   const [expandedSuggestion, setExpandedSuggestion] = useState<string | null>(null);
+
+  const filteredSuggestions = suggestions.filter(s => s.confidence >= minMatch);
+  const minPercent = Math.round(minMatch * 100);
 
   if (isLoading) {
     return (
@@ -58,12 +65,47 @@ export default function AILinkSuggestions({
     );
   }
 
+  if (filteredSuggestions.length === 0) {
+    return (
+      <div className="ai-suggestions-panel">
+        <div className="ai-suggestions-header">
+          <LightningBoltIcon className="ai-icon" />
+          <h3>AI Link Suggestions</h3>
+          <button 
+            onClick={onRefreshSuggestions}
+            className="ai-refresh-btn"
+            title="Refresh suggestions"
+          >
+            🔄
+          </button>
+        </div>
+        <div className="ai-suggestions-empty">
+          <p>No suggestions above {minPercent}% match.</p>
+          <div style={{ marginTop: 8 }}>
+            <label style={{ fontSize: 12, opacity: 0.8 }}>Min match: {minPercent}%</label>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={minPercent}
+              onChange={(e) => onChangeMinMatch(Number(e.target.value) / 100)}
+              style={{ width: '100%' }}
+            />
+          </div>
+          <button onClick={onRefreshSuggestions} className="ai-refresh-button">
+            Generate Suggestions
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="ai-suggestions-panel">
       <div className="ai-suggestions-header">
         <LightningBoltIcon className="ai-icon" />
         <h3>AI Link Suggestions</h3>
-        <span className="ai-suggestions-count">{suggestions.length}</span>
+        <span className="ai-suggestions-count">{filteredSuggestions.length}</span>
         <button 
           onClick={onRefreshSuggestions}
           className="ai-refresh-btn"
@@ -72,9 +114,21 @@ export default function AILinkSuggestions({
           🔄
         </button>
       </div>
+
+      <div style={{ padding: '0 12px 10px 12px' }}>
+        <label style={{ fontSize: 12, opacity: 0.8 }}>Min match: {minPercent}%</label>
+        <input
+          type="range"
+          min={0}
+          max={100}
+          value={minPercent}
+          onChange={(e) => onChangeMinMatch(Number(e.target.value) / 100)}
+          style={{ width: '100%' }}
+        />
+      </div>
       
       <div className="ai-suggestions-list">
-        {suggestions.map((suggestion, index) => (
+        {filteredSuggestions.map((suggestion, index) => (
           <div 
             key={`${suggestion.targetEntryId}-${index}`}
             className={`ai-suggestion-item ${
