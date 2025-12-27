@@ -34,15 +34,30 @@ The codebase deliberately avoids an embedded database; files on disk are the sou
 
 ---
 
-## Repository layout (simplified)
+## Repository layout
 
 ```
-├─ src/              # React frontend (Vite project)
-│  ├─ components/    # UI components
-│  └─ types/         # Frontend TypeScript mirrors of the Rust models
-├─ src-tauri/        # Rust source and Tauri configuration
-│  └─ src/           # Rust commands, models and plugin setup
-└─ archives/         # (Created at runtime) User data – NOT committed to Git
+├─ src/                      # React frontend (Vite project)
+│  ├─ components/            # UI components (organized by feature)
+│  │  ├─ ai/                 # AI-related components (suggestions, service manager)
+│  │  ├─ archive/            # Archive selection and creation
+│  │  ├─ dialogs/            # Modal dialogs (preferences, prompts)
+│  │  ├─ editor/             # Markdown editor and slash commands
+│  │  ├─ layout/             # App layout (header, tabs, menu)
+│  │  ├─ sidebar/            # Navigation tree (archives, tomes, entries)
+│  │  └─ ui/                 # Reusable UI primitives
+│  ├─ hooks/                 # Custom React hooks
+│  ├─ lib/                   # Database and sync utilities
+│  ├─ services/              # External service integrations
+│  ├─ stores/                # Data store operations
+│  ├─ styles/                # CSS stylesheets
+│  ├─ themes/                # Editor and preview themes
+│  ├─ types/                 # TypeScript type definitions
+│  └─ utils/                 # Utility functions
+├─ src-tauri/                # Rust source and Tauri configuration
+│  └─ src/                   # Rust commands, models and plugin setup
+├─ stackscribe-ai-service/   # Python AI service (FastAPI)
+└─ archives/                 # (Created at runtime) User data – NOT committed
 ```
 
 ---

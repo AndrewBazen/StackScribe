@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import health, links, quality
+from routers import health, links, quality, chat
 from deps import ensure_collection_exists
 
 
@@ -26,6 +26,7 @@ async def startup_event():
 app.include_router(health.router)
 app.include_router(links.router)
 app.include_router(quality.router)
+app.include_router(chat.router)
 
 if __name__ == "__main__":
     import uvicorn

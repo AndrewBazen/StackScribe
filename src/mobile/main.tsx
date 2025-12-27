@@ -2,7 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import MobileApp from './App';
 
-import '../Styles/App.css'; // reuse base styles if desired
+import '../styles/App.css'; // reuse base styles if desired
 
 console.log('🚀 MOBILE MAIN.TSX LOADED - Mobile UI is starting!');
 console.log('Current URL:', window.location.href);

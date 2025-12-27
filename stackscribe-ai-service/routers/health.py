@@ -3,7 +3,7 @@ from deps import client
 from settings import QDRANT_HOST, QDRANT_PORT, COLLECTION
 import requests
 
-router = APIRouter(prefix="/api", tags=["health"])
+router = APIRouter(tags=["health"])
 
 @router.get("/health")
 async def health_check():
