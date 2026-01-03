@@ -20,7 +20,6 @@ export function SlashCommandPopover({ position, onSelect, onClose, visible }: Sl
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    console.log("🔥 SlashCommandPopover visible changed:", visible);
     if (visible) {
       setSelectedCommand(null);
       setPrompt('');
@@ -89,14 +88,9 @@ export function SlashCommandPopover({ position, onSelect, onClose, visible }: Sl
     }
   };
 
-  console.log("🔥 SlashCommandPopover render - visible:", visible, "position:", position);
-
   if (!visible) {
-    console.log("🔥 SlashCommandPopover - not visible, returning null");
     return null;
   }
-
-  console.log("🔥 SlashCommandPopover - rendering popover");
 
   return (
     <div
@@ -116,22 +110,21 @@ export function SlashCommandPopover({ position, onSelect, onClose, visible }: Sl
     >
       {!selectedCommand ? (
         <div className="command-list">
-          <div className="popover-header" style={{ backgroundColor: '#007acc', color: 'white', padding: '12px' }}>
-            🚀 Select a command
+          <div className="popover-header">
+            Select a command
           </div>
           {commands.map((command, index) => (
             <div
               key={command.id}
               className={`command-item ${index === selectedIndex ? 'selected' : ''}`}
               onClick={() => setSelectedCommand(command.id)}
-              style={{ backgroundColor: index === selectedIndex ? '#007acc' : 'transparent', color: index === selectedIndex ? 'white' : 'inherit' }}
             >
               <div className="command-name">{command.name}</div>
               <div className="command-description">{command.description}</div>
             </div>
           ))}
-          <div className="popover-footer" style={{ backgroundColor: '#f0f0f0', padding: '8px' }}>
-            <span>↑↓ to navigate • Enter to select • Esc to close</span>
+          <div className="popover-footer">
+            <span>↑↓ navigate • Enter select • Esc close</span>
           </div>
         </div>
       ) : (

@@ -49,8 +49,6 @@ function App() {
   const [showPreferences, setShowPreferences] = useState(false);
   const [ShowEntryPrompt, setShowEntryPrompt] = useState(false);
   const [ShowTomePrompt, setShowTomePrompt] = useState(false);
-  const [themes] = useState<{ [key: string]: string }>({});
-  const [plugins] = useState<{ [key: string]: string }>({});
   const [decorations, setDecorations] = useState<Extension[]>([]);
 
   // Editor view reference for AI chat integration
@@ -234,26 +232,12 @@ function App() {
     setShowEntryPrompt(false);
   };
 
-  const handleToggleAzureSync = (checked: boolean) => {
-    localStorage.setItem('enableAzureSync', JSON.stringify(checked));
-    window.location.reload();
-  };
-
   return (
     <>
       <StartupNotification />
 
       {showPreferences && (
-        <Preferences
-          themes={themes}
-          plugins={plugins}
-          onApply={() => {}}
-          onClose={() => setShowPreferences(false)}
-          onTogglePreview={() => {}}
-          onTogglePlugin={() => {}}
-          onSelectTheme={() => {}}
-          onToggleAzureSync={handleToggleAzureSync}
-        />
+        <Preferences onClose={() => setShowPreferences(false)} />
       )}
 
       {ShowEntryPrompt && (

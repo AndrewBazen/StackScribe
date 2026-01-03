@@ -1,64 +1,82 @@
 .slash-command-popover {
-  background: var(--background-color);
-  border: 1px solid var(--border-color);
+  background: #252526;
+  border: 1px solid #3e3e3e;
   border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  min-width: 300px;
-  max-width: 400px;
-  font-family: var(--font-family);
-  font-size: 14px;
-  color: var(--text-color);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  min-width: 280px;
+  max-width: 360px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  color: #d4d4d4;
   overflow: hidden;
   position: absolute;
   z-index: 1000;
-  visibility: visible !important;
-  display: block !important;
+  animation: menuFadeIn 0.15s ease;
+}
+
+@keyframes menuFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .popover-header {
-  padding: 12px 16px;
+  padding: 10px 14px;
   font-weight: 600;
-  border-bottom: 1px solid var(--border-color);
-  background: var(--header-background);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid #3e3e3e;
+  background: #2d2d2d;
+  color: #888;
 }
 
 .popover-footer {
-  padding: 8px 16px;
-  font-size: 12px;
-  color: var(--text-muted);
-  background: var(--footer-background);
-  border-top: 1px solid var(--border-color);
+  padding: 8px 14px;
+  font-size: 11px;
+  color: #666;
+  background: #2d2d2d;
+  border-top: 1px solid #3e3e3e;
 }
 
 .command-list {
-  max-height: 300px;
+  max-height: 280px;
   overflow-y: auto;
 }
 
 .command-item {
-  padding: 12px 16px;
+  padding: 10px 14px;
   cursor: pointer;
-  border-bottom: 1px solid var(--border-color);
   transition: background-color 0.15s ease;
 }
 
-.command-item:hover,
-.command-item.selected {
-  background: var(--hover-background);
+.command-item:hover {
+  background: #3e3e3e;
 }
 
-.command-item:last-child {
-  border-bottom: none;
+.command-item.selected {
+  background: #007acc;
+  color: #fff;
+}
+
+.command-item.selected .command-description {
+  color: rgba(255, 255, 255, 0.8);
 }
 
 .command-name {
   font-weight: 500;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
+  color: #d4d4d4;
 }
 
 .command-description {
-  font-size: 13px;
-  color: var(--text-muted);
+  font-size: 12px;
+  color: #888;
 }
 
 .prompt-input-container {
@@ -67,65 +85,40 @@
 
 .prompt-input {
   width: 100%;
-  padding: 12px 16px;
+  padding: 12px 14px;
   border: none;
-  background: var(--background-color);
-  color: var(--text-color);
-  font-size: 14px;
-  font-family: var(--font-family);
+  background: #1e1e1e;
+  color: #d4d4d4;
+  font-size: 13px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   outline: none;
   resize: none;
 }
 
 .prompt-input::placeholder {
-  color: var(--text-muted);
+  color: #666;
 }
 
 .prompt-textarea {
   width: 100%;
-  padding: 12px 16px;
+  padding: 12px 14px;
   border: none;
-  background: var(--background-color);
-  color: var(--text-color);
-  font-size: 14px;
-  font-family: var(--font-family);
+  background: #1e1e1e;
+  color: #d4d4d4;
+  font-size: 13px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   outline: none;
   resize: vertical;
-  min-height: 60px;
+  min-height: 80px;
   max-height: 200px;
   line-height: 1.5;
   box-sizing: border-box;
 }
 
 .prompt-textarea::placeholder {
-  color: var(--text-muted);
+  color: #666;
 }
 
 .prompt-textarea:focus {
-  background: var(--header-background);
-}
-
-/* Dark theme variables */
-:root {
-  --background-color: #1e1e1e;
-  --border-color: #3e3e3e;
-  --text-color: #d4d4d4;
-  --text-muted: #9d9d9d;
-  --header-background: #2d2d2d;
-  --footer-background: #252526;
-  --hover-background: #2a2d2e;
-  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-/* Light theme override */
-@media (prefers-color-scheme: light) {
-  :root {
-    --background-color: #ffffff;
-    --border-color: #e1e4e8;
-    --text-color: #24292e;
-    --text-muted: #6a737d;
-    --header-background: #f6f8fa;
-    --footer-background: #f6f8fa;
-    --hover-background: #f1f8ff;
-  }
+  background: #252526;
 } 
