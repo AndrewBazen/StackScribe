@@ -2,14 +2,15 @@ import CodeMirror, { Extension } from "@uiw/react-codemirror";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { syntaxTree } from "@codemirror/language";
-import { Decoration, DecorationSet, EditorView, keymap } from "@codemirror/view";
+import { EditorView, keymap } from "@codemirror/view";
 import type { SyntaxNode } from "@lezer/common";
 import { basicSetup } from "codemirror";
 import { TextToMarkdown } from "../../utils/markdownTools";
 import { invoke } from "@tauri-apps/api/core";
-import { useState, useEffect, useRef } from "react";
-import { myTheme } from "../../themes/theme";
-import { slashCommands, slashCommandPopoverField, hideSlashCommandPopover, executeSlashCommand, setPopoverStateCallback } from "../../utils/slashCommands";
+import { useState, useEffect, useRef, useMemo } from "react";
+import { createCompartmentalizedTheme, themeCompartment, createEditorTheme } from "../../themes/editorTheme";
+import { useTheme } from "../../themes/themeContext";
+import { slashCommands, hideSlashCommandPopover, executeSlashCommand, setPopoverStateCallback } from "../../utils/slashCommands";
 import { SlashCommandPopover } from "./SlashCommandPopover";
 import "../../styles/SlashCommandPopover.css";
 
@@ -59,7 +60,9 @@ export function MdEditor({ value, onEntryChange, decorations, onEditorViewReady 
     position: { top: number; left: number };
     from: number;
   } | null>(null);
+  const [viewReady, setViewReady] = useState(false);
   const editorRef = useRef<any>(null);
+  const { editorTheme } = useTheme();
 
   // Update editor text whenever parent passes a different `value`
   useEffect(() => {
@@ -68,10 +71,14 @@ export function MdEditor({ value, onEntryChange, decorations, onEditorViewReady 
 
   // Notify parent when editor view is ready
   useEffect(() => {
-    if (editorRef.current?.view && onEditorViewReady) {
-      onEditorViewReady(editorRef.current.view);
+    if (editorRef.current?.view) {
+      setViewReady(true);
+      if (onEditorViewReady) {
+        onEditorViewReady(editorRef.current.view);
+      }
     }
     return () => {
+      setViewReady(false);
       if (onEditorViewReady) {
         onEditorViewReady(null);
       }
@@ -125,14 +132,43 @@ export function MdEditor({ value, onEntryChange, decorations, onEditorViewReady 
     setPopoverState(null);
   };
 
+  // Reconfigure editor theme when theme changes or view becomes ready
+  useEffect(() => {
+    if (viewReady && editorRef.current?.view && editorTheme) {
+      editorRef.current.view.dispatch({
+        effects: themeCompartment.reconfigure(createEditorTheme(editorTheme))
+      });
+    }
+  }, [editorTheme, viewReady]);
+
+  // Memoize base extensions (without theme - theme is handled separately via compartment)
+  const baseExtensions = useMemo(() => [
+    md,
+    runKeymap,
+    TextToMarkdown,
+    basicSetup,
+    EditorView.lineWrapping,
+    slashCommands(),
+  ], []);
+
+  // Store initial theme ref to avoid recreating compartment on theme changes
+  const initialEditorThemeRef = useRef(editorTheme);
+
+  // Combine all extensions - theme compartment is created once and reconfigured dynamically
+  const allExtensions = useMemo(() => [
+    ...baseExtensions,
+    createCompartmentalizedTheme(initialEditorThemeRef.current),
+    ...decorations
+  ], [baseExtensions, decorations]);
+
   return (
     <div style={{ position: 'relative', height: '100vh', width: '100%' }}>
       <CodeMirror
         ref={editorRef}
         className="editor"
         value={markdown}
-        extensions={[md, runKeymap, TextToMarkdown, basicSetup, EditorView.lineWrapping, myTheme, slashCommands(), ...decorations]}
-        theme={myTheme}
+        theme="none"
+        extensions={allExtensions}
         onChange={(v, viewUpdate) => {
           setMarkdown(v);
           onEntryChange(v);

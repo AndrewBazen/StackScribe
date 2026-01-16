@@ -24,10 +24,23 @@ export default function TabBar({
   const barRef = useRef<HTMLDivElement>(null);
 
   const startDrag = (id: string) => (e: React.MouseEvent) => {
-    e.preventDefault();
-    setDraggingId(id);
+    const startX = e.clientX;
+    const startY = e.clientY;
+    let isDragging = false;
+    const DRAG_THRESHOLD = 5; // pixels before drag starts
 
     const move = (ev: MouseEvent) => {
+      // Only start drag if mouse has moved beyond threshold
+      if (!isDragging) {
+        const dx = Math.abs(ev.clientX - startX);
+        const dy = Math.abs(ev.clientY - startY);
+        if (dx < DRAG_THRESHOLD && dy < DRAG_THRESHOLD) {
+          return;
+        }
+        isDragging = true;
+        setDraggingId(id);
+      }
+
       const bar = barRef.current;
       if (!bar) return;
       const { left } = bar.getBoundingClientRect();
@@ -47,6 +60,14 @@ export default function TabBar({
     };
 
     const end = (ev: MouseEvent) => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", end);
+
+      // Only process reorder if we were actually dragging
+      if (!isDragging) {
+        return;
+      }
+
       const bar = barRef.current;
       let dropTarget = dragOverIdRef.current;
       if (bar) {
@@ -66,8 +87,6 @@ export default function TabBar({
       setDraggingId(null);
       setDragOverId(null);
       dragOverIdRef.current = null;
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", end);
     };
 
     window.addEventListener("mousemove", move);

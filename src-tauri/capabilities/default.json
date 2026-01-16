@@ -12,10 +12,19 @@
     "sql:allow-select",
     "sql:allow-close",
     "fs:default",
-    "fs:allow-read-file",
-    "fs:allow-write-file",
-    "fs:allow-create",
+    "fs:allow-read-text-file",
+    "fs:allow-write-text-file",
     "fs:allow-mkdir",
+    "fs:allow-exists",
+    "fs:allow-read-dir",
+    "fs:scope-appdata-recursive",
+    "fs:scope-appcache-recursive",
+    "fs:scope-appconfig-recursive",
+    "fs:scope-applocaldata-recursive",
+    "fs:scope-applog-recursive",
+    "fs:scope-resource-recursive",
+    "dialog:default",
+    "dialog:allow-open",
     "core:window:allow-start-dragging"
   ]
 }

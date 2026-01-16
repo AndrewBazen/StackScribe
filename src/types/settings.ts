@@ -31,6 +31,8 @@ export interface AppSettings {
   // Appearance Settings
   appearance: {
     theme: 'dark' | 'light' | 'system';
+    customAppThemeId: string | null;
+    customEditorThemeId: string | null;
     accentColor: string;
     sidebarWidth: number;
     showPreviewPanel: boolean;
@@ -67,6 +69,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   appearance: {
     theme: 'dark',
+    customAppThemeId: null,
+    customEditorThemeId: null,
     accentColor: '#007acc',
     sidebarWidth: 250,
     showPreviewPanel: true,

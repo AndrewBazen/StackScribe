@@ -1,5 +1,5 @@
 .cm-editor {
-    background-color: var(--color-bg-primary);
+    /* Background color is set by CodeMirror theme in editorTheme.ts */
     font-size: var(--font-size-base);
     line-height: var(--line-height-normal);
     padding: var(--spacing-xs);
@@ -18,27 +18,12 @@
     min-height: 0;
 }
 
-/* Selection highlighting */
-.cm-editor .cm-selectionBackground {
-    background-color: rgba(48, 239, 182, 0.25) !important;
-}
-
-.cm-editor.cm-focused .cm-selectionBackground {
-    background-color: rgba(48, 239, 182, 0.3) !important;
-}
-
-.cm-editor .cm-selectionMatch {
-    background-color: rgba(48, 239, 182, 0.15) !important;
-}
-
-.cm-editor .cm-cursor,
-.cm-editor .cm-cursorLayer .cm-cursor {
-    border-left-color: #4ff7d0 !important;
-    border-left-width: 2px !important;
-}
+/* Selection highlighting is handled by the theme system in editorTheme.ts */
+/* IMPORTANT: Do NOT set opaque background-color on .cm-line as it covers selection */
 
 .editor-container {
-  background-color: #222;
+  /* Background handled by CodeMirror theme */
+  background-color: transparent;
   width: 100%;
   flex: 1;
   min-height: 0;
@@ -46,27 +31,23 @@
   flex-direction: column;
   overflow: hidden;
 }
-  
-.cm-scroller {
-background-color: #111;
-font-size: 14px;
-line-height: 1.5;
-padding: 5px;
-}
 
-  
+/* Let theme system handle these colors - don't override with opaque backgrounds */
+.cm-scroller {
+  font-size: 14px;
+  line-height: 1.5;
+  padding: 5px;
+}
 
 .cm-gutter {
-background-color: #111;
-font-size: 14px;
-line-height: 1.5;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
-
-.cm-line { 
-background-color: #111;
-font-size: 14px;
-line-height: 1.5;
+.cm-line {
+  font-size: 14px;
+  line-height: 1.5;
+  /* No background-color here - allows selection to show through */
 }
 
 

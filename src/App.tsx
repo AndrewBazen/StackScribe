@@ -28,6 +28,7 @@ import { Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { detectAmbiguity } from "./utils/detectAmbiguity";
 import { insertAtCursor } from "./utils/editorAIActions";
+import { ThemeProvider } from "./themes/themeContext";
 
 // Custom hooks
 import { usePanelLayout } from "./hooks/usePanelLayout";
@@ -240,7 +241,7 @@ function App() {
   };
 
   return (
-    <>
+    <ThemeProvider>
       <StartupNotification />
 
       {showPreferences && (
@@ -428,7 +429,7 @@ function App() {
           )}
         </div>
       </div>
-    </>
+    </ThemeProvider>
   );
 }
 

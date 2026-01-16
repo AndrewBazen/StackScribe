@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { Entry } from "../types/entry";
 import { Tome } from "../types/tome";
 import { Archive } from "../types/archive";
@@ -57,6 +57,18 @@ export function useEntryManagement(
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const aiSuggestTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Refs to access current state without stale closures
+  const tabbedEntriesRef = useRef<Entry[]>(tabbedEntries);
+  const activeTabIdRef = useRef<string | null>(activeTabId);
+
+  useEffect(() => {
+    tabbedEntriesRef.current = tabbedEntries;
+  }, [tabbedEntries]);
+
+  useEffect(() => {
+    activeTabIdRef.current = activeTabId;
+  }, [activeTabId]);
+
   const handleCreateTab = useCallback((newEntry: Entry) => {
     setTabbedEntries(prev => {
       if (prev.some(e => e.id === newEntry.id)) return prev;
@@ -67,36 +79,34 @@ export function useEntryManagement(
 
   const handleTabSelect = useCallback((id: string) => {
     setActiveTabId(id);
-    setTabbedEntries(prev => {
-      const selected = prev.find(e => e.id === id);
-      if (selected) {
-        setEntry(selected);
-        setMarkdown(selected.content ?? "");
-      }
-      return prev;
-    });
+    // Find the entry from ref and update current entry/markdown
+    const selected = tabbedEntriesRef.current.find(e => e.id === id);
+    if (selected) {
+      setEntry(selected);
+      setMarkdown(selected.content ?? "");
+    }
   }, []);
 
   const handleTabClose = useCallback((id: string) => {
-    setTabbedEntries(prev => {
-      const remaining = prev.filter(e => e.id !== id);
-      setActiveTabId(currentActiveId => {
-        if (id === currentActiveId) {
-          if (remaining.length > 0) {
-            const newActive = remaining[remaining.length - 1];
-            setEntry(newActive);
-            setMarkdown(newActive.content ?? "");
-            return newActive.id;
-          } else {
-            setEntry(null);
-            setMarkdown("");
-            return null;
-          }
-        }
-        return currentActiveId;
-      });
-      return remaining;
-    });
+    const currentTabs = tabbedEntriesRef.current;
+    const currentActiveId = activeTabIdRef.current;
+    const remaining = currentTabs.filter(e => e.id !== id);
+
+    setTabbedEntries(remaining);
+
+    // Check if we're closing the active tab
+    if (id === currentActiveId) {
+      if (remaining.length > 0) {
+        const newActive = remaining[remaining.length - 1];
+        setActiveTabId(newActive.id);
+        setEntry(newActive);
+        setMarkdown(newActive.content ?? "");
+      } else {
+        setActiveTabId(null);
+        setEntry(null);
+        setMarkdown("");
+      }
+    }
   }, []);
 
   const handleTabReorder = useCallback((dragId: string, targetId: string) => {

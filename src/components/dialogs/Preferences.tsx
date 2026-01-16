@@ -3,11 +3,25 @@ import * as Tabs from "@radix-ui/react-tabs";
 import * as Switch from "@radix-ui/react-switch";
 import * as Select from "@radix-ui/react-select";
 import * as Slider from "@radix-ui/react-slider";
-import { Cross2Icon, ChevronDownIcon, CheckIcon } from "@radix-ui/react-icons";
+import { Cross2Icon, ChevronDownIcon, CheckIcon, EyeOpenIcon, EyeClosedIcon, PlusIcon, UploadIcon } from "@radix-ui/react-icons";
 import "../../styles/Preferences.css";
+import "../../styles/ThemePreview.css";
 import { settingsService } from "../../services/settingsService";
 import { AppSettings, ACCENT_COLORS, LOCAL_AI_MODELS, OPENAI_MODELS, ANTHROPIC_MODELS, DEFAULT_SETTINGS } from "../../types/settings";
-import { EyeOpenIcon, EyeClosedIcon } from "@radix-ui/react-icons";
+import { useTheme } from "../../themes/themeContext";
+import {
+  importAppTheme,
+  importEditorTheme,
+  loadAppThemeById,
+  loadEditorThemeById,
+  BUILT_IN_APP_THEMES,
+  BUILT_IN_EDITOR_THEMES,
+} from "../../themes/themeUtils";
+import type { AppThemeDefinition, EditorThemeDefinition } from "../../themes/types";
+import AppThemePreview from "../ui/AppThemePreview";
+import EditorThemePreview from "../ui/EditorThemePreview";
+import { open } from "@tauri-apps/plugin-dialog";
+import { readTextFile } from "@tauri-apps/plugin-fs";
 
 interface PreferencesProps {
   onClose: () => void;
@@ -17,6 +31,79 @@ export default function Preferences({ onClose }: PreferencesProps) {
   const [settings, setSettings] = useState<AppSettings>(settingsService.getSettings());
   const [aiStatus, setAiStatus] = useState<'checking' | 'connected' | 'error'>('checking');
   const [showApiKey, setShowApiKey] = useState(false);
+  const {
+    appTheme,
+    editorTheme,
+    appThemeSetting,
+    setAppThemeSetting,
+    setCustomAppTheme,
+    setCustomEditorTheme,
+    availableAppThemes,
+    availableEditorThemes,
+    refreshAppThemes,
+    refreshEditorThemes,
+  } = useTheme();
+
+  // App theme management state
+  const [allAppThemes, setAllAppThemes] = useState<AppThemeDefinition[]>([...BUILT_IN_APP_THEMES]);
+  const [selectedAppThemeId, setSelectedAppThemeId] = useState<string>(appTheme.id);
+  const [appThemeImportError, setAppThemeImportError] = useState<string | null>(null);
+  const [isImportingAppTheme, setIsImportingAppTheme] = useState(false);
+
+  // Editor theme management state
+  const [allEditorThemes, setAllEditorThemes] = useState<EditorThemeDefinition[]>([...BUILT_IN_EDITOR_THEMES]);
+  const [selectedEditorThemeId, setSelectedEditorThemeId] = useState<string>(editorTheme.id);
+  const [editorThemeImportError, setEditorThemeImportError] = useState<string | null>(null);
+  const [isImportingEditorTheme, setIsImportingEditorTheme] = useState(false);
+
+  // Load all app themes on mount
+  useEffect(() => {
+    const loadAllAppThemes = async () => {
+      const themes: AppThemeDefinition[] = [...BUILT_IN_APP_THEMES];
+
+      for (const meta of availableAppThemes) {
+        if (!meta.isBuiltIn) {
+          const result = await loadAppThemeById(meta.id);
+          if (result.success && result.theme) {
+            themes.push(result.theme);
+          }
+        }
+      }
+
+      setAllAppThemes(themes);
+    };
+
+    loadAllAppThemes();
+  }, [availableAppThemes]);
+
+  // Load all editor themes on mount
+  useEffect(() => {
+    const loadAllEditorThemes = async () => {
+      const themes: EditorThemeDefinition[] = [...BUILT_IN_EDITOR_THEMES];
+
+      for (const meta of availableEditorThemes) {
+        if (!meta.isBuiltIn) {
+          const result = await loadEditorThemeById(meta.id);
+          if (result.success && result.theme) {
+            themes.push(result.theme);
+          }
+        }
+      }
+
+      setAllEditorThemes(themes);
+    };
+
+    loadAllEditorThemes();
+  }, [availableEditorThemes]);
+
+  // Update selected themes when current themes change
+  useEffect(() => {
+    setSelectedAppThemeId(appTheme.id);
+  }, [appTheme.id]);
+
+  useEffect(() => {
+    setSelectedEditorThemeId(editorTheme.id);
+  }, [editorTheme.id]);
 
   useEffect(() => {
     checkAIConnection();
@@ -58,10 +145,133 @@ export default function Preferences({ onClose }: PreferencesProps) {
 
   const updateAppearance = (updates: Partial<AppSettings['appearance']>) => {
     setSettings(prev => ({ ...prev, appearance: { ...prev.appearance, ...updates } }));
+    if (updates.theme) {
+      setAppThemeSetting(updates.theme);
+    }
   };
 
   const updateSync = (updates: Partial<AppSettings['sync']>) => {
     setSettings(prev => ({ ...prev, sync: { ...prev.sync, ...updates } }));
+  };
+
+  // Handle app theme selection
+  const handleAppThemeSelect = async (themeId: string) => {
+    setSelectedAppThemeId(themeId);
+    setAppThemeImportError(null);
+    // Update local settings state so Save doesn't overwrite
+    setSettings(prev => ({
+      ...prev,
+      appearance: { ...prev.appearance, customAppThemeId: themeId }
+    }));
+    await setCustomAppTheme(themeId);
+  };
+
+  // Handle editor theme selection
+  const handleEditorThemeSelect = async (themeId: string) => {
+    setSelectedEditorThemeId(themeId);
+    setEditorThemeImportError(null);
+    // Update local settings state so Save doesn't overwrite
+    setSettings(prev => ({
+      ...prev,
+      appearance: { ...prev.appearance, customEditorThemeId: themeId }
+    }));
+    await setCustomEditorTheme(themeId);
+  };
+
+  // Handle app theme import
+  const handleImportAppTheme = async () => {
+    setAppThemeImportError(null);
+    setIsImportingAppTheme(true);
+
+    try {
+      const filePath = await open({
+        multiple: false,
+        filters: [{ name: 'App Theme', extensions: ['json'] }],
+        title: 'Import App Theme',
+      });
+
+      if (!filePath) {
+        setIsImportingAppTheme(false);
+        return;
+      }
+
+      const content = await readTextFile(filePath as string);
+      const result = await importAppTheme(content);
+
+      if (result.success && result.theme) {
+        await refreshAppThemes();
+        setAllAppThemes(prev => {
+          const exists = prev.some(t => t.id === result.theme!.id);
+          if (exists) {
+            return prev.map(t => t.id === result.theme!.id ? result.theme! : t);
+          }
+          return [...prev, result.theme!];
+        });
+        setSelectedAppThemeId(result.theme.id);
+        // Update local settings state so Save doesn't overwrite
+        setSettings(prev => ({
+          ...prev,
+          appearance: { ...prev.appearance, customAppThemeId: result.theme!.id }
+        }));
+        await setCustomAppTheme(result.theme.id);
+      } else {
+        setAppThemeImportError(result.error || 'Failed to import theme');
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      setAppThemeImportError(errorMsg);
+      console.error('Failed to import app theme:', error);
+    } finally {
+      setIsImportingAppTheme(false);
+    }
+  };
+
+  // Handle editor theme import
+  const handleImportEditorTheme = async () => {
+    setEditorThemeImportError(null);
+    setIsImportingEditorTheme(true);
+
+    try {
+      const filePath = await open({
+        multiple: false,
+        filters: [{ name: 'Editor Theme', extensions: ['json'] }],
+        title: 'Import Editor Theme',
+      });
+
+      if (!filePath) {
+        setIsImportingEditorTheme(false);
+        return;
+      }
+
+      const content = await readTextFile(filePath as string);
+      const result = await importEditorTheme(content);
+
+      if (result.success && result.theme) {
+        await refreshEditorThemes();
+        setAllEditorThemes(prev => {
+          const exists = prev.some(t => t.id === result.theme!.id);
+          if (exists) {
+            return prev.map(t => t.id === result.theme!.id ? result.theme! : t);
+          }
+          return [...prev, result.theme!];
+        });
+        setSelectedEditorThemeId(result.theme.id);
+        // Update local settings state so Save doesn't overwrite
+        setSettings(prev => ({
+          ...prev,
+          appearance: { ...prev.appearance, customEditorThemeId: result.theme!.id }
+        }));
+        await setCustomEditorTheme(result.theme.id);
+      } else {
+        setEditorThemeImportError(result.error || 'Failed to import theme');
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      setEditorThemeImportError(errorMsg);
+      console.error('Failed to import editor theme:', error);
+    } finally {
+      setIsImportingEditorTheme(false);
+    }
   };
 
   return (
@@ -168,8 +378,8 @@ export default function Preferences({ onClose }: PreferencesProps) {
                   <div className="setting-control">
                     <div className={`status-indicator ${aiStatus}`}>
                       {aiStatus === 'checking' && 'Checking...'}
-                      {aiStatus === 'connected' && '● Connected'}
-                      {aiStatus === 'error' && '● Not Connected'}
+                      {aiStatus === 'connected' && 'Connected'}
+                      {aiStatus === 'error' && 'Not Connected'}
                     </div>
                   </div>
                 </div>
@@ -246,7 +456,7 @@ export default function Preferences({ onClose }: PreferencesProps) {
                   </div>
                   <div className="setting-control">
                     <div className={`status-indicator ${settings.ai.openaiApiKey ? 'success' : 'warning'}`}>
-                      {settings.ai.openaiApiKey ? '● API Key Set' : '● No API Key'}
+                      {settings.ai.openaiApiKey ? 'API Key Set' : 'No API Key'}
                     </div>
                   </div>
                 </div>
@@ -323,7 +533,7 @@ export default function Preferences({ onClose }: PreferencesProps) {
                   </div>
                   <div className="setting-control">
                     <div className={`status-indicator ${settings.ai.anthropicApiKey ? 'success' : 'warning'}`}>
-                      {settings.ai.anthropicApiKey ? '● API Key Set' : '● No API Key'}
+                      {settings.ai.anthropicApiKey ? 'API Key Set' : 'No API Key'}
                     </div>
                   </div>
                 </div>
@@ -359,24 +569,6 @@ export default function Preferences({ onClose }: PreferencesProps) {
                         </Select.Content>
                       </Select.Portal>
                     </Select.Root>
-                  </div>
-                </div>
-
-                <div className="setting-row">
-                  <div className="setting-info">
-                    <div className="setting-label">Get API Key</div>
-                    <div className="setting-description">Sign up at console.anthropic.com</div>
-                  </div>
-                  <div className="setting-control">
-                    <a
-                      href="https://console.anthropic.com"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="btn btn-secondary"
-                      style={{ textDecoration: 'none', fontSize: '12px', padding: '6px 12px' }}
-                    >
-                      Get API Key →
-                    </a>
                   </div>
                 </div>
               </div>
@@ -593,11 +785,12 @@ export default function Preferences({ onClose }: PreferencesProps) {
           {/* Appearance Settings Tab */}
           <Tabs.Content className="tabs-content" value="appearance">
             <div className="settings-section">
-              <div className="settings-section-title">Theme</div>
+              <div className="settings-section-title">Base Theme</div>
 
               <div className="setting-row">
                 <div className="setting-info">
-                  <div className="setting-label">Color Theme</div>
+                  <div className="setting-label">Theme Mode</div>
+                  <div className="setting-description">Choose dark, light, or follow system</div>
                 </div>
                 <div className="setting-control">
                   <Select.Root
@@ -628,10 +821,105 @@ export default function Preferences({ onClose }: PreferencesProps) {
                   </Select.Root>
                 </div>
               </div>
+            </div>
+
+            {/* App Theme Section */}
+            <div className="settings-section">
+              <div className="settings-section-title">
+                App Theme
+                <button
+                  className="btn btn-secondary"
+                  onClick={handleImportAppTheme}
+                  disabled={isImportingAppTheme}
+                  style={{ marginLeft: 'auto', padding: '4px 10px', fontSize: '11px' }}
+                >
+                  <UploadIcon style={{ marginRight: '4px' }} />
+                  {isImportingAppTheme ? 'Importing...' : 'Import'}
+                </button>
+              </div>
+              <div className="setting-description" style={{ marginBottom: '12px', marginTop: '-8px' }}>
+                Controls sidebar, tabs, dialogs, and buttons
+              </div>
+
+              {appThemeImportError && (
+                <div className="theme-error">
+                  {appThemeImportError}
+                </div>
+              )}
+
+              <div className="theme-grid">
+                {allAppThemes.map((t) => (
+                  <AppThemePreview
+                    key={t.id}
+                    theme={t}
+                    isSelected={selectedAppThemeId === t.id}
+                    onClick={() => handleAppThemeSelect(t.id)}
+                  />
+                ))}
+
+                <button
+                  className="theme-import-btn"
+                  onClick={handleImportAppTheme}
+                  disabled={isImportingAppTheme}
+                >
+                  <PlusIcon />
+                  <span>Import Theme</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Editor Theme Section */}
+            <div className="settings-section">
+              <div className="settings-section-title">
+                Editor Theme
+                <button
+                  className="btn btn-secondary"
+                  onClick={handleImportEditorTheme}
+                  disabled={isImportingEditorTheme}
+                  style={{ marginLeft: 'auto', padding: '4px 10px', fontSize: '11px' }}
+                >
+                  <UploadIcon style={{ marginRight: '4px' }} />
+                  {isImportingEditorTheme ? 'Importing...' : 'Import'}
+                </button>
+              </div>
+              <div className="setting-description" style={{ marginBottom: '12px', marginTop: '-8px' }}>
+                Controls syntax highlighting and editor colors
+              </div>
+
+              {editorThemeImportError && (
+                <div className="theme-error">
+                  {editorThemeImportError}
+                </div>
+              )}
+
+              <div className="theme-grid">
+                {allEditorThemes.map((t) => (
+                  <EditorThemePreview
+                    key={t.id}
+                    theme={t}
+                    isSelected={selectedEditorThemeId === t.id}
+                    onClick={() => handleEditorThemeSelect(t.id)}
+                  />
+                ))}
+
+                <button
+                  className="theme-import-btn"
+                  onClick={handleImportEditorTheme}
+                  disabled={isImportingEditorTheme}
+                >
+                  <PlusIcon />
+                  <span>Import Theme</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="settings-section">
+              <div className="settings-section-title">Accent Color</div>
 
               <div className="setting-row">
                 <div className="setting-info">
-                  <div className="setting-label">Accent Color</div>
+                  <div className="setting-label">Choose Accent</div>
+                  <div className="setting-description">Highlight color for buttons and links</div>
                 </div>
                 <div className="setting-control">
                   <div className="color-picker-container">

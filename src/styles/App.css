@@ -12,8 +12,8 @@
   line-height: 24px;
   font-weight: 400;
 
-  color: #fff;
-  background-color: #222;
+  color: var(--color-text-primary);
+  background-color: var(--color-bg-tertiary);
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -498,8 +498,8 @@ button:active {
 /* --- Tab Bar Styles --- */
 .tab-bar {
   display: flex;
-  background-color: #111;
-  border-bottom: 1px solid #333;
+  background-color: var(--color-bg-primary);
+  border-bottom: 1px solid var(--color-border-primary);
   user-select: none;
   flex-shrink: 0;
   overflow-x: auto;
@@ -510,18 +510,18 @@ button:active {
   align-items: center;
   padding: 4px 10px;
   cursor: grab;
-  color: #ccc;
-  border-right: 1px solid #333;
+  color: var(--color-text-secondary);
+  border-right: 1px solid var(--color-border-primary);
   transition: background-color 0.2s ease;
 }
 
 .tab.active {
-  background-color: #222;
-  color: #fff;
+  background-color: var(--color-bg-secondary);
+  color: var(--color-text-primary);
 }
 
 .tab:hover:not(.active) {
-  background-color: #1a1a1a;
+  background-color: var(--color-bg-hover);
 }
 
 .tab:active {
@@ -588,19 +588,19 @@ button:active {
 }
 
 .tab.drag-over {
-  border-left: 2px solid #50EFB8;
+  border-left: 2px solid var(--color-accent-primary);
 }
 
 /* --- Panel Styling Enhancements --- */
 
 .entry-view-panel {
-  background-color: #181818;
-  border-right: 1px solid #333;
+  background-color: var(--color-bg-primary);
+  border-right: 1px solid var(--color-border-primary);
 }
 
 
 #preview-container {
-  background-color: #1e1e1e;
+  background-color: var(--color-bg-secondary);
   display: flex;
   flex-direction: column;
   min-height: 0;
