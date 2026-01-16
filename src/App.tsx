@@ -13,8 +13,11 @@ import CustomHeaderBar from "./components/layout/CustomHeaderBar";
 import { exitApp, SaveShortcut } from "./utils/appUtils";
 import PreviewPanel from "./components/ui/PreviewPanel";
 import NamePrompt from "./components/dialogs/NamePrompt";
+import ArchivePrompt from "./components/dialogs/ArchivePrompt";
+import ArchiveSelectDialog from "./components/dialogs/ArchiveSelectDialog";
 import { getSyncManager, SyncStatus } from "./lib/sync";
 import { getDb } from "./lib/db";
+import { searchEntriesInArchive } from "./stores/dataStore";
 import TabBar from "./components/layout/TabBar";
 import logo from "../src-tauri/icons/icon.png";
 import Preferences from "./components/dialogs/Preferences";
@@ -49,6 +52,9 @@ function App() {
   const [showPreferences, setShowPreferences] = useState(false);
   const [ShowEntryPrompt, setShowEntryPrompt] = useState(false);
   const [ShowTomePrompt, setShowTomePrompt] = useState(false);
+  const [showStartWindow, setShowStartWindow] = useState(true);
+  const [showArchivePrompt, setShowArchivePrompt] = useState(false);
+  const [showArchiveSelect, setShowArchiveSelect] = useState(false);
   const [decorations, setDecorations] = useState<Extension[]>([]);
 
   // Editor view reference for AI chat integration
@@ -65,6 +71,7 @@ function App() {
     panelsVisible,
     togglePanels,
     startDragging,
+    dragging,
     rightPanelMode,
     toggleRightPanelMode,
   } = usePanelLayout();
@@ -260,21 +267,56 @@ function App() {
         />
       )}
 
+      {showArchivePrompt && (
+        <ArchivePrompt
+          onClose={() => setShowArchivePrompt(false)}
+          onConfirm={async (archive, tomeName) => {
+            await handleArchiveCreate(archive, tomeName);
+            setShowArchivePrompt(false);
+          }}
+        />
+      )}
+
+      {showArchiveSelect && (
+        <ArchiveSelectDialog
+          archives={archiveManagement.archives}
+          onSelect={(archive) => {
+            archiveManagement.handleArchiveOpen(archive);
+            setShowArchiveSelect(false);
+          }}
+          onClose={() => setShowArchiveSelect(false)}
+        />
+      )}
+
       <StartWindow
         archives={archiveManagement.archives}
         onArchiveClick={archiveManagement.handleArchiveOpen}
         onCreateArchive={handleArchiveCreate}
         syncStatus={syncStatus}
+        isOpen={showStartWindow}
+        onOpenChange={setShowStartWindow}
       />
 
       <CustomHeaderBar
+        onOpenArchive={async () => {
+          await archiveManagement.refreshArchives();
+          setShowArchiveSelect(true);
+        }}
+        onNewArchive={() => setShowArchivePrompt(true)}
         onNewEntry={() => setShowEntryPrompt(true)}
         onNewTome={() => setShowTomePrompt(true)}
         onSave={entryManagement.handleSave}
         onSaveAll={entryManagement.handleSaveAll}
         onClose={handleClose}
         onPreferences={() => setShowPreferences(true)}
-        onSearch={() => {}}
+        onSearch={async (query) => {
+          if (!archiveManagement.archive) return [];
+          return searchEntriesInArchive(archiveManagement.archive.id, query);
+        }}
+        onSearchResultClick={(entry) => {
+          entryManagement.handleEntryClick(entry);
+        }}
+        archiveId={archiveManagement.archive?.id ?? null}
         panelsVisible={panelsVisible}
         onTogglePanels={togglePanels}
         onToggleAI={aiSuggestions.toggleAISuggestions}
@@ -297,12 +339,14 @@ function App() {
                   onRenameEntry={entryManagement.handleRenameEntry}
                   onDeleteEntry={entryManagement.handleDeleteEntry}
                   refreshKey={entryManagement.entryRefreshKey}
+                  selectedTomeId={archiveManagement.tome?.id ?? null}
+                  selectedEntryId={entryManagement.entry?.id ?? null}
                 />
               </div>
             )}
             <div className="panel-nav">
-              <NavIconButton icon={<GearIcon />} onClick={() => setShowPreferences(true)} />
-              <NavIconButton icon={<FilePlusIcon />} onClick={() => setShowEntryPrompt(true)} />
+              <NavIconButton icon={<GearIcon />} onClick={() => setShowPreferences(true)} variant="primary" />
+              <NavIconButton icon={<FilePlusIcon />} onClick={() => setShowEntryPrompt(true)} variant="primary" />
             </div>
           </div>
         )}
@@ -339,7 +383,7 @@ function App() {
 
         {/* DIVIDER */}
         <div
-          className="divider"
+          className={`divider ${dragging === 'right' ? 'dragging' : ''}`}
           onMouseDown={() => startDragging("right")}
           style={{ width: DIVIDER_SIZE }}
         />

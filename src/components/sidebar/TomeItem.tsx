@@ -12,10 +12,12 @@ interface TomeItemProps {
     onRenameEntry: (entry: Entry) => void;
     onDeleteEntry: (entry: Entry) => void;
     refreshKey?: number;
+    isSelected?: boolean;
+    selectedEntryId?: string | null;
 }
 
 export default function TomeItem(props: TomeItemProps) {
-    const { tome, onTomeClick, onEntryClick, onRenameEntry, onDeleteEntry, refreshKey } = props;
+    const { tome, onTomeClick, onEntryClick, onRenameEntry, onDeleteEntry, refreshKey, isSelected = false, selectedEntryId } = props;
     const [isExpanded, setIsExpanded] = useState(false);
     const [entries, setEntries] = useState<Entry[]>([]);
     const [hasLoaded, setHasLoaded] = useState(false);
@@ -27,7 +29,7 @@ export default function TomeItem(props: TomeItemProps) {
         return fetchedEntries;
     };
 
-    const handleToggleExpand = async (e: React.MouseEvent) => {
+    const handleToggleExpand = async (e: React.MouseEvent | React.KeyboardEvent) => {
         e.stopPropagation();
 
         if (!hasLoaded) {
@@ -48,6 +50,20 @@ export default function TomeItem(props: TomeItemProps) {
         }
     };
 
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            handleTomeNameClick();
+        }
+    };
+
+    const handleExpandKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            handleToggleExpand(e);
+        }
+    };
+
     // Refresh entries when refreshKey changes
     useEffect(() => {
         if (hasLoaded && isExpanded) {
@@ -57,11 +73,25 @@ export default function TomeItem(props: TomeItemProps) {
 
     return (
         <div className="tome-item-container">
-            <div className="tome-item">
-                <div className="tome-item-expand" onClick={handleToggleExpand}>
+            <div className={`tome-item ${isSelected ? 'selected' : ''} ${isExpanded ? 'expanded' : ''}`}>
+                <div
+                    className={`tome-item-expand ${isExpanded ? 'expanded' : ''}`}
+                    onClick={handleToggleExpand}
+                    onKeyDown={handleExpandKeyDown}
+                    tabIndex={0}
+                    role="button"
+                    aria-expanded={isExpanded}
+                    aria-label={isExpanded ? 'Collapse' : 'Expand'}
+                >
                     {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
                 </div>
-                <div className="tome-item-title" onClick={handleTomeNameClick}>
+                <div
+                    className="tome-item-title"
+                    onClick={handleTomeNameClick}
+                    onKeyDown={handleKeyDown}
+                    tabIndex={0}
+                    role="button"
+                >
                     {tome.name}
                 </div>
             </div>
@@ -75,6 +105,7 @@ export default function TomeItem(props: TomeItemProps) {
                             onEntryClick={onEntryClick}
                             onRename={onRenameEntry}
                             onDelete={onDeleteEntry}
+                            isSelected={selectedEntryId === entry.id}
                         />
                     ))}
                 </div>

@@ -6,17 +6,29 @@ interface TreeEntryItemProps {
     onEntryClick: (entry: Entry) => void;
     onRename: (entry: Entry) => void;
     onDelete: (entry: Entry) => void;
+    isSelected?: boolean;
 }
 
 export default function TreeEntryItem(props: TreeEntryItemProps) {
-    const { entry, onEntryClick, onRename, onDelete } = props;
+    const { entry, onEntryClick, onRename, onDelete, isSelected = false } = props;
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onEntryClick(entry);
+        }
+    };
 
     return (
         <ContextMenu.Root>
             <ContextMenu.Trigger asChild>
                 <div
-                    className="tree-entry-item"
+                    className={`tree-entry-item ${isSelected ? 'selected' : ''}`}
                     onClick={() => onEntryClick(entry)}
+                    onKeyDown={handleKeyDown}
+                    tabIndex={0}
+                    role="button"
+                    aria-selected={isSelected}
                 >
                     <span className="tree-entry-item-name">{entry.name}</span>
                 </div>

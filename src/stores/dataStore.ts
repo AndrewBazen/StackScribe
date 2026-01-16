@@ -167,6 +167,29 @@ export const getSortedAndUpdated = async (current: Archive | Tome,
     } 
 }
 
+// Search entries within an archive
+export const searchEntriesInArchive = async (archiveId: string, query: string): Promise<(Entry & { tomeName: string })[]> => {
+    if (!query.trim()) return [];
+
+    const db = await getDb();
+    const searchPattern = `%${query}%`;
+
+    const results = await db.select<(Entry & { tomeName: string })[]>(
+        `SELECT e.*, t.name as tomeName
+         FROM entries e
+         JOIN tomes t ON e.tome_id = t.id
+         WHERE t.archive_id = ?
+         AND (e.name LIKE ? OR e.content LIKE ?)
+         ORDER BY
+           CASE WHEN e.name LIKE ? THEN 0 ELSE 1 END,
+           e.updated_at DESC
+         LIMIT 20`,
+        [archiveId, searchPattern, searchPattern, searchPattern]
+    );
+
+    return results;
+};
+
 const LAST_SYNCED_KEY = 'last_synced_at';
 
 /** getLastSyncedAt - returns the timestamp of the last successful sync to the server

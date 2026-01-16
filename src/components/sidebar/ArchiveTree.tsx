@@ -13,10 +13,12 @@ interface ArchiveTreeProps {
     onRenameEntry: (entry: Entry) => void;
     onDeleteEntry: (entry: Entry) => void;
     refreshKey?: number;
+    selectedTomeId?: string | null;
+    selectedEntryId?: string | null;
 }
 
 export default function ArchiveTree(props: ArchiveTreeProps) {
-    const { archive, tomes, onTomeClick, onEntryClick, onRenameEntry, onDeleteEntry, refreshKey } = props;
+    const { archive, tomes, onTomeClick, onEntryClick, onRenameEntry, onDeleteEntry, refreshKey, selectedTomeId, selectedEntryId } = props;
     const [isExpanded, setIsExpanded] = useState(true);
 
     const handleBackClick = () => {
@@ -38,6 +40,8 @@ export default function ArchiveTree(props: ArchiveTreeProps) {
                     onRenameEntry={onRenameEntry}
                     onDeleteEntry={onDeleteEntry}
                     refreshKey={refreshKey}
+                    selectedTomeId={selectedTomeId}
+                    selectedEntryId={selectedEntryId}
                 />
             )}
         </div>

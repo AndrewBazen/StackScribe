@@ -9,10 +9,12 @@ interface TomeListProps {
     onRenameEntry: (entry: Entry) => void;
     onDeleteEntry: (entry: Entry) => void;
     refreshKey?: number;
+    selectedTomeId?: string | null;
+    selectedEntryId?: string | null;
 }
 
 export default function TomeList(props: TomeListProps) {
-    const { tomes, onTomeClick, onEntryClick, onRenameEntry, onDeleteEntry, refreshKey } = props;
+    const { tomes, onTomeClick, onEntryClick, onRenameEntry, onDeleteEntry, refreshKey, selectedTomeId, selectedEntryId } = props;
 
     return (
         <div className="tome-list-inner">
@@ -25,6 +27,8 @@ export default function TomeList(props: TomeListProps) {
                     onRenameEntry={onRenameEntry}
                     onDeleteEntry={onDeleteEntry}
                     refreshKey={refreshKey}
+                    isSelected={selectedTomeId === tome.id}
+                    selectedEntryId={selectedEntryId}
                 />
             ))}
         </div>

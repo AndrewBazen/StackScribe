@@ -20,6 +20,143 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   -webkit-text-size-adjust: 100%;
+
+  /* === COLOR PALETTE === */
+
+  /* Background Colors */
+  --color-bg-primary: #111;
+  --color-bg-secondary: #1e1e1e;
+  --color-bg-tertiary: #222;
+  --color-bg-elevated: #252526;
+  --color-bg-hover: #2d2d2d;
+  --color-bg-active: #333;
+  --color-bg-highlight: #3e3e3e;
+
+  /* Text Colors */
+  --color-text-primary: #fff;
+  --color-text-secondary: #d4d4d4;
+  --color-text-tertiary: #ccc;
+  --color-text-muted: #888;
+  --color-text-disabled: #666;
+
+  /* Border Colors */
+  --color-border-primary: #333;
+  --color-border-secondary: #3e3e3e;
+  --color-border-focus: #007acc;
+
+  /* Accent Colors */
+  --color-accent-primary: #50EFB8;
+  --color-accent-primary-hover: #3CBA8E;
+  --color-accent-secondary: #007acc;
+  --color-accent-secondary-hover: #0098ff;
+  --color-accent-warning: #ffd700;
+  --color-accent-error: #f14c4c;
+  --color-accent-success: #4ec9b0;
+
+  /* === SPACING SCALE === */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 20px;
+  --spacing-2xl: 24px;
+  --spacing-3xl: 32px;
+
+  /* === TYPOGRAPHY SCALE === */
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-md: 13px;
+  --font-size-base: 14px;
+  --font-size-lg: 15px;
+  --font-size-xl: 16px;
+  --font-size-2xl: 18px;
+  --font-size-3xl: 20px;
+
+  /* Font Weights */
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* Line Heights */
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.75;
+
+  /* === TRANSITIONS === */
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.2s ease;
+  --transition-slow: 0.3s ease;
+
+  /* === BORDERS & RADII === */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-full: 50%;
+
+  /* === SHADOWS === */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.4);
+
+  /* === Z-INDEX SCALE === */
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-modal: 1000;
+  --z-popover: 1500;
+  --z-toast: 2000;
+}
+
+/* === ICON BUTTON === */
+.icon-button {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.icon-button:hover {
+  background: var(--color-bg-active);
+  color: var(--color-text-primary);
+}
+
+.icon-button:active {
+  background: var(--color-bg-highlight);
+  transform: scale(0.95);
+}
+
+.icon-button:focus-visible {
+  outline: 2px solid var(--color-accent-secondary);
+  outline-offset: 2px;
+}
+
+/* Primary variant - green accent for sidebar */
+.icon-button--primary {
+  background: var(--color-accent-primary);
+  color: #000;
+  border: 1px solid var(--color-bg-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.icon-button--primary svg path {
+  fill: #000;
+}
+
+.icon-button--primary:hover {
+  background: var(--color-accent-primary-hover);
+  color: #000;
+}
+
+.icon-button--primary:active {
+  background: var(--color-accent-primary);
 }
 
 .menubar {
@@ -173,13 +310,39 @@ html, body {
 
 .divider {
   cursor: col-resize;
-  background-color: #222;
+  background-color: var(--color-bg-tertiary);
   user-select: none;
+  transition: background-color var(--transition-fast);
+  position: relative;
 }
 
-/* optional: highlight on hover */
 .divider:hover {
-  background-color: #333;
+  background-color: var(--color-accent-secondary);
+}
+
+.divider.dragging {
+  background-color: var(--color-accent-secondary);
+}
+
+/* Visual drag handle indicator */
+.divider::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 32px;
+  background-color: var(--color-border-secondary);
+  border-radius: 1px;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.divider:hover::before,
+.divider.dragging::before {
+  opacity: 1;
+  background-color: var(--color-text-primary);
 }
 
 .input {
@@ -219,7 +382,8 @@ html, body {
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
-  align-items: flex-start;
+  align-items: stretch;
+  width: 100%;
   padding: 5px;
   border-radius: 8px;
 }
@@ -228,32 +392,34 @@ html, body {
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
-  align-items: flex-start;
+  align-items: stretch;
+  width: 100%;
   padding: 5px;
   border-radius: 8px;
 }
 
 .list-item {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   justify-content: flex-start;
-  align-items: flex-start;
-  padding: 5px;
+  align-items: center;
+  width: 100%;
+  padding: 10px 12px;
   color: #fff;
   font-size: 14px;
   line-height: 1.5;
   cursor: pointer;
   user-select: none;
-  border-radius: 8px;
+  border-radius: 6px;
+  transition: background-color 0.15s ease;
 }
 
 .list-item:hover {
-  background-color: #222;
-  opacity: 1;
+  background-color: #333;
 }
 
 .list-item:active {
-  background-color: #333;
+  background-color: #444;
 }
 
 button {
@@ -371,23 +537,49 @@ button:active {
 }
 
 .tab-close {
-  margin-left: 8px;
-  font-size: 12px;
-  opacity: 0.6;
+  margin-left: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  opacity: 0;
   cursor: pointer;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+}
+
+.tab:hover .tab-close,
+.tab.active .tab-close {
+  opacity: 0.6;
 }
 
 .tab-close:hover {
   opacity: 1;
+  background-color: var(--color-accent-error);
+  color: var(--color-text-primary);
 }
 
 .unsaved-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background-color: #e53935;
-  margin-left: 6px;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-full);
+  background-color: var(--color-accent-error);
+  margin-left: var(--spacing-sm);
   display: inline-block;
+  animation: pulse-unsaved 2s ease-in-out infinite;
+}
+
+@keyframes pulse-unsaved {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(0.85);
+  }
 }
 
 .tab.dragging {

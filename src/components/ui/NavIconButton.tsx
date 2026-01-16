@@ -1,9 +1,19 @@
 import React from 'react';
 
-export function NavIconButton( props: { icon: React.ReactNode, onClick: () => void }) {
-    const { icon, onClick } = props;
+interface NavIconButtonProps {
+    icon: React.ReactNode;
+    onClick: () => void;
+    variant?: 'default' | 'primary';
+    className?: string;
+}
+
+export function NavIconButton({ icon, onClick, variant = 'default', className = '' }: NavIconButtonProps) {
+    const variantClass = variant === 'primary' ? 'icon-button--primary' : '';
     return (
-        <button id="nav-icon-button" className="button" onClick={onClick}>
+        <button
+            className={`icon-button ${variantClass} ${className}`.trim()}
+            onClick={onClick}
+        >
             {icon}
         </button>
     );

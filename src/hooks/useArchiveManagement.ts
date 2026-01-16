@@ -91,6 +91,9 @@ export function useArchiveManagement(
     }
     setArchive(createdArchive);
 
+    // Refresh archives list so the new archive appears in the selection dialog
+    await refreshArchives();
+
     const createdTome = await CreateTome(createdArchive, tomeName);
     if (!createdTome) {
       console.error("Failed to create tome:", tomeName);
@@ -106,7 +109,7 @@ export function useArchiveManagement(
     }
 
     return { archive: createdArchive, tome: createdTome, entry: createdEntry };
-  }, [syncStatus.isReady]);
+  }, [syncStatus.isReady, refreshArchives]);
 
   const handleTomeClick = useCallback((clickedTome: Tome, entries: Entry[]) => {
     if (!clickedTome) {

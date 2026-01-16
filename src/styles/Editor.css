@@ -1,14 +1,11 @@
 .cm-editor {
-    background-color: #111;
-    font-size: 14px;
-    line-height: 1.5;
-    padding: 5px;
-    border-radius: 8px;
-    border: 1px solid #333;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-    opacity: 0.8;
-    font-size: 14px;
-    line-height: 1.5;
+    background-color: var(--color-bg-primary);
+    font-size: var(--font-size-base);
+    line-height: var(--line-height-normal);
+    padding: var(--spacing-xs);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--color-border-primary);
+    box-shadow: var(--shadow-sm);
     flex: 1;
     min-height: 0;
     display: flex;
@@ -19,6 +16,25 @@
     flex: 1;
     overflow: auto !important;
     min-height: 0;
+}
+
+/* Selection highlighting */
+.cm-editor .cm-selectionBackground {
+    background-color: rgba(48, 239, 182, 0.25) !important;
+}
+
+.cm-editor.cm-focused .cm-selectionBackground {
+    background-color: rgba(48, 239, 182, 0.3) !important;
+}
+
+.cm-editor .cm-selectionMatch {
+    background-color: rgba(48, 239, 182, 0.15) !important;
+}
+
+.cm-editor .cm-cursor,
+.cm-editor .cm-cursorLayer .cm-cursor {
+    border-left-color: #4ff7d0 !important;
+    border-left-width: 2px !important;
 }
 
 .editor-container {
