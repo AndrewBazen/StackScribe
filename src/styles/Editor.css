@@ -51,26 +51,21 @@
 }
 
 
+/* Preview code block styling */
 .preview-code {
-    background-color: #222 !important;
-    color: #fff !important;
-    padding: 10px !important;
-    margin: 0 !important;
-    width: 500px !important;
-    height: 100% !important;
-    border-radius: 8px !important;
-    border: 2px solid #3CBA8E !important;
-    box-shadow: 5px 5px 10px rgba(0, 0, 0, 0.5) !important;
-    opacity: 1 !important;
-    font-size: 14px !important;
-    font-weight: 400 !important;
-    line-height: 1.5 !important;
-    font-family: inherit !important;
-    font-size: inherit !important;
-    font-weight: inherit !important;
-    line-height: inherit !important;
-    font-family: inherit !important;
-    font-size: inherit !important;
+    background-color: var(--color-bg-tertiary);
+    color: var(--color-text-primary);
+    padding: var(--spacing-md);
+    margin: 0;
+    width: 500px;
+    height: 100%;
+    border-radius: var(--radius-lg);
+    border: 2px solid var(--color-accent-primary-hover);
+    box-shadow: var(--shadow-md);
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-normal);
+    line-height: var(--line-height-normal);
+    font-family: inherit;
 }
 
 /* AI clarity analysis decorations */
@@ -92,41 +87,6 @@
     50% { opacity: 1; }
 }
 
-/* Highlight requirements sections */
-.cm-line:has-text("## Generated Requirements") {
-    color: #4a9eff !important;
-    font-weight: bold !important;
-}
-
-.cm-line:has-text("### ") {
-    color: #7dd3fc !important;
-    font-weight: 600 !important;
-}
-
-.cm-line:has-text("**Description:**") {
-    color: #a3e635 !important;
-}
-
-.cm-line:has-text("**Acceptance Criteria:**") {
-    color: #fbbf24 !important;
-}
-
-.cm-line:has-text("**Non-Functional Requirements:**") {
-    color: #f472b6 !important;
-}
-
-.cm-line:has-text("**Constraints:**") {
-    color: #fb7185 !important;
-}
-
-.cm-line:has-text("**Dependencies:**") {
-    color: #c084fc !important;
-}
-
-.cm-line:has-text("**Risks:**") {
-    color: #f87171 !important;
-}
-
-.cm-line:has-text("**Assumptions:**") {
-    color: #34d399 !important;
-}
+/* Note: Requirements section highlighting is handled by CodeMirror syntax highlighting.
+   The :has-text() pseudo-class is not valid CSS - text-based styling must be done
+   via JavaScript/CodeMirror decorations or syntax highlighting extensions. */

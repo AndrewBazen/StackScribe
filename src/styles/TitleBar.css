@@ -1,44 +1,63 @@
+/* Title Bar Styles */
 
-   .titlebar{
-     height:32px;
-     display:flex;
-     justify-content:space-between;
-     align-items:center;
-     padding-left:8px;
-     background:#151515;            /* your dark theme */
-     user-select:none;
-   }
-   .titlebar-left{display:flex;gap:8px;align-items:center;color:#fff;font-size:13px;}
+.titlebar {
+  height: 32px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-left: var(--spacing-sm);
+  background: var(--color-bg-primary);
+  user-select: none;
+}
 
-   .titlebar-buttons {
-    display: flex;
-    flex-direction: row;
-    justify-content: flex-end;
-    align-items: flex-end;
-   }
+.titlebar-left {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-md);
+}
 
-  /* Titlebar window control buttons */
+.titlebar-buttons {
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-end;
+  align-items: flex-end;
+}
+
+/* Titlebar window control buttons */
 .titlebar-button-container {
-    width: 24px;
-    height: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
+
 .titlebar-button-container button {
-    padding: 0;       /* remove default button padding */
-    display: flex;    /* center glyph */
-    align-items: center;
-    justify-content: center;
-    border: none;
-    background: transparent;
-    color: #fff;
-    font-size: 14px;  /* glyph size */
-    line-height: 1;
-    cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-base);
+  line-height: 1;
+  cursor: pointer;
 }
+
 /* hover states */
-.titlebar-button-container:hover{background:#2a2a2a;color:#fff;border:none;cursor:pointer;}
-.titlebar-button-container:last-child:hover{background:#e53935;color:#000;border:none;cursor:pointer;}
+.titlebar-button-container:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+  border: none;
+  cursor: pointer;
+}
 
-
+.titlebar-button-container:last-child:hover {
+  background: var(--color-accent-error);
+  color: #000;
+  border: none;
+  cursor: pointer;
+}

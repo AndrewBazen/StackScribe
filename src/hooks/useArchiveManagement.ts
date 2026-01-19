@@ -25,6 +25,9 @@ interface ArchiveManagementActions {
   handleTomeClick: (clickedTome: Tome, entries: Entry[]) => void;
   handleNewTome: (tomeName: string) => Promise<{ tome: Tome; entry: Entry } | null>;
   refreshArchives: () => Promise<void>;
+  refreshTomes: () => Promise<void>;
+  clearArchiveState: () => void;
+  clearTomeState: () => void;
 }
 
 interface UseArchiveManagementOptions {
@@ -141,6 +144,22 @@ export function useArchiveManagement(
     return { tome: newTome, entry: defaultEntry };
   }, [archive, tomes]);
 
+  const refreshTomes = useCallback(async () => {
+    if (!archive) return;
+    const fetchedTomes = await getTomesByArchiveId(archive.id);
+    setTomes(fetchedTomes);
+  }, [archive]);
+
+  const clearArchiveState = useCallback(() => {
+    setArchive(null);
+    setTomes([]);
+    setTome(null);
+  }, []);
+
+  const clearTomeState = useCallback(() => {
+    setTome(null);
+  }, []);
+
   return {
     archive,
     archives,
@@ -153,5 +172,8 @@ export function useArchiveManagement(
     handleTomeClick,
     handleNewTome,
     refreshArchives,
+    refreshTomes,
+    clearArchiveState,
+    clearTomeState,
   };
 }

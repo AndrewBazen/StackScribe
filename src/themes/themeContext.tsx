@@ -42,6 +42,22 @@ import {
 import { getThemeReconfiguration, createEditorTheme } from './editorTheme';
 import { settingsService } from '../services/settingsService';
 
+// Helper to darken a hex color
+function darkenColor(hex: string, amount: number): string {
+  const num = parseInt(hex.replace('#', ''), 16);
+  const r = Math.max(0, (num >> 16) - Math.round(255 * amount));
+  const g = Math.max(0, ((num >> 8) & 0x00FF) - Math.round(255 * amount));
+  const b = Math.max(0, (num & 0x0000FF) - Math.round(255 * amount));
+  return `#${(r << 16 | g << 8 | b).toString(16).padStart(6, '0')}`;
+}
+
+// Apply accent color to CSS variables
+function applyAccentColor(color: string): void {
+  const root = document.documentElement;
+  root.style.setProperty('--color-accent-primary', color);
+  root.style.setProperty('--color-accent-primary-hover', darkenColor(color, 0.15));
+}
+
 /**
  * Theme context value interface
  */
@@ -295,6 +311,11 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
         loadEditorTheme(editorThemeIdToLoad),
         loadAndApplyLegacyTheme(legacyThemeId),
       ]);
+
+      // Apply accent color if set
+      if (settings.accentColor) {
+        applyAccentColor(settings.accentColor);
+      }
 
       setIsLoading(false);
     };

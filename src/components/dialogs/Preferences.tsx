@@ -148,6 +148,20 @@ export default function Preferences({ onClose }: PreferencesProps) {
     if (updates.theme) {
       setAppThemeSetting(updates.theme);
     }
+    // Immediately apply and persist accent color changes
+    if (updates.accentColor) {
+      // Apply CSS variables directly
+      const color = updates.accentColor;
+      const num = parseInt(color.replace('#', ''), 16);
+      const r = Math.max(0, (num >> 16) - Math.round(255 * 0.15));
+      const g = Math.max(0, ((num >> 8) & 0x00FF) - Math.round(255 * 0.15));
+      const b = Math.max(0, (num & 0x0000FF) - Math.round(255 * 0.15));
+      const hoverColor = `#${(r << 16 | g << 8 | b).toString(16).padStart(6, '0')}`;
+      document.documentElement.style.setProperty('--color-accent-primary', color);
+      document.documentElement.style.setProperty('--color-accent-primary-hover', hoverColor);
+      // Persist to settings
+      settingsService.updateAppearanceSettings({ accentColor: color });
+    }
   };
 
   const updateSync = (updates: Partial<AppSettings['sync']>) => {
@@ -158,11 +172,33 @@ export default function Preferences({ onClose }: PreferencesProps) {
   const handleAppThemeSelect = async (themeId: string) => {
     setSelectedAppThemeId(themeId);
     setAppThemeImportError(null);
-    // Update local settings state so Save doesn't overwrite
+
+    // Find the selected theme to get its accent color
+    const selectedTheme = allAppThemes.find(t => t.id === themeId);
+    const themeAccentColor = selectedTheme?.colors.accentPrimary;
+
+    // Update local settings state - reset accent color to theme's default
     setSettings(prev => ({
       ...prev,
-      appearance: { ...prev.appearance, customAppThemeId: themeId }
+      appearance: {
+        ...prev.appearance,
+        customAppThemeId: themeId,
+        accentColor: themeAccentColor || prev.appearance.accentColor
+      }
     }));
+
+    // Apply the theme's accent color and persist it
+    if (themeAccentColor) {
+      const num = parseInt(themeAccentColor.replace('#', ''), 16);
+      const r = Math.max(0, (num >> 16) - Math.round(255 * 0.15));
+      const g = Math.max(0, ((num >> 8) & 0x00FF) - Math.round(255 * 0.15));
+      const b = Math.max(0, (num & 0x0000FF) - Math.round(255 * 0.15));
+      const hoverColor = `#${(r << 16 | g << 8 | b).toString(16).padStart(6, '0')}`;
+      document.documentElement.style.setProperty('--color-accent-primary', themeAccentColor);
+      document.documentElement.style.setProperty('--color-accent-primary-hover', hoverColor);
+      settingsService.updateAppearanceSettings({ accentColor: themeAccentColor });
+    }
+
     await setCustomAppTheme(themeId);
   };
 
@@ -208,11 +244,32 @@ export default function Preferences({ onClose }: PreferencesProps) {
           return [...prev, result.theme!];
         });
         setSelectedAppThemeId(result.theme.id);
-        // Update local settings state so Save doesn't overwrite
+
+        // Get the theme's accent color
+        const themeAccentColor = result.theme.colors.accentPrimary;
+
+        // Update local settings state - reset accent color to theme's default
         setSettings(prev => ({
           ...prev,
-          appearance: { ...prev.appearance, customAppThemeId: result.theme!.id }
+          appearance: {
+            ...prev.appearance,
+            customAppThemeId: result.theme!.id,
+            accentColor: themeAccentColor
+          }
         }));
+
+        // Apply the theme's accent color and persist it
+        if (themeAccentColor) {
+          const num = parseInt(themeAccentColor.replace('#', ''), 16);
+          const r = Math.max(0, (num >> 16) - Math.round(255 * 0.15));
+          const g = Math.max(0, ((num >> 8) & 0x00FF) - Math.round(255 * 0.15));
+          const b = Math.max(0, (num & 0x0000FF) - Math.round(255 * 0.15));
+          const hoverColor = `#${(r << 16 | g << 8 | b).toString(16).padStart(6, '0')}`;
+          document.documentElement.style.setProperty('--color-accent-primary', themeAccentColor);
+          document.documentElement.style.setProperty('--color-accent-primary-hover', hoverColor);
+          settingsService.updateAppearanceSettings({ accentColor: themeAccentColor });
+        }
+
         await setCustomAppTheme(result.theme.id);
       } else {
         setAppThemeImportError(result.error || 'Failed to import theme');
@@ -1034,10 +1091,10 @@ export default function Preferences({ onClose }: PreferencesProps) {
         </Tabs.Root>
 
         <div className="preferences-footer">
-          <button className="btn btn-secondary" onClick={handleReset}>
+          <button className="btn btn-primary" onClick={handleReset}>
             Reset to Defaults
           </button>
-          <button className="btn btn-secondary" onClick={onClose}>
+          <button className="btn btn-primary" onClick={onClose}>
             Cancel
           </button>
           <button className="btn btn-primary" onClick={handleSave}>

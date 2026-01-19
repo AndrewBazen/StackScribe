@@ -101,7 +101,7 @@ const CreateArchiveDialog = (props: {
                                 disabled={!syncStatus.isReady}
                             />
                         </fieldset>
-                        <div id="create-archive-buttons" className="dialog-buttons">
+                        <div className="dialog-buttons">
                             <Dialog.Close asChild>
                                 <button className="close-button" aria-label="Close"><Cross2Icon /></button>
                             </Dialog.Close>
@@ -134,12 +134,12 @@ export default function ArchiveSelect(props: ArchiveSelectProps) {
     };
 
     return (
-        <div id="archive-select" className="view">
+        <div className="dialog-archive-select view">
             <CreateArchiveDialog onCreateArchive={onCreateArchive} syncStatus={syncStatus} />
-            <div id="archive-list-container" className="view">
-                <ArchiveList 
-                    archives={archives} 
-                    onArchiveClick={handleArchiveClick} 
+            <div className="dialog-archive-list-container view">
+                <ArchiveList
+                    archives={archives}
+                    onArchiveClick={handleArchiveClick}
                     syncStatus={syncStatus}
                 />
             </div>

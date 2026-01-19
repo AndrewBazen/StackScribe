@@ -23,9 +23,9 @@ export default function ArchiveList(props: ArchiveListProps) {
         <ScrollArea.Root className="list">
             <ScrollArea.Viewport className="list-viewport">
                 {archives.map((archive) => (
-                    <div 
-                        key={archive.name} 
-                        onClick={() => handleArchiveClick(archive)} 
+                    <div
+                        key={archive.id}
+                        onClick={() => handleArchiveClick(archive)}
                         className="list-item"
                         style={{ 
                             opacity: syncStatus.isReady ? 1 : 0.5,

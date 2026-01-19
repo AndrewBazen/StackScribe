@@ -29,6 +29,7 @@ interface CustomHeaderBarProps {
   onSaveAll: () => void;
   onClose: () => void;
   onPreferences: () => void;
+  onManageArchives: () => void;
   onSearch: (query: string) => Promise<SearchResult[]>;
   onSearchResultClick: (entry: Entry) => void;
   archiveId?: string | null;
@@ -38,6 +39,8 @@ interface CustomHeaderBarProps {
   aiActive?: boolean;
   onToggleChat: () => void;
   chatActive?: boolean;
+  onTogglePreview: () => void;
+  previewActive?: boolean;
 }
 
 export default function CustomHeaderBar({
@@ -49,6 +52,7 @@ export default function CustomHeaderBar({
   onSaveAll,
   onClose,
   onPreferences,
+  onManageArchives,
   onSearch,
   onSearchResultClick,
   archiveId,
@@ -57,7 +61,9 @@ export default function CustomHeaderBar({
   onToggleAI,
   aiActive = false,
   onToggleChat,
-  chatActive = false
+  chatActive = false,
+  onTogglePreview,
+  previewActive = false
 }: CustomHeaderBarProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -139,6 +145,7 @@ export default function CustomHeaderBar({
           onSaveAll={onSaveAll}
           onClose={onClose}
           onPreferences={onPreferences}
+          onManageArchives={onManageArchives}
         />
         
         <div className="header-divider" />
@@ -201,10 +208,12 @@ export default function CustomHeaderBar({
           icon={<Share1Icon />}
           onClick={() => console.log('Share')}
         />
-        <NavIconButton
-          icon={<ReaderIcon />}
-          onClick={() => console.log('Reading Mode')}
-        />
+        <div className={`preview-toggle-button ${previewActive ? 'active' : ''}`}>
+          <NavIconButton
+            icon={<ReaderIcon />}
+            onClick={onTogglePreview}
+          />
+        </div>
         <NavIconButton
           icon={<GearIcon />}
           onClick={onPreferences}

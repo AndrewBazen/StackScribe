@@ -15,6 +15,7 @@ import PreviewPanel from "./components/ui/PreviewPanel";
 import NamePrompt from "./components/dialogs/NamePrompt";
 import ArchivePrompt from "./components/dialogs/ArchivePrompt";
 import ArchiveSelectDialog from "./components/dialogs/ArchiveSelectDialog";
+import ArchiveManageDialog from "./components/dialogs/ArchiveManageDialog";
 import { getSyncManager, SyncStatus } from "./lib/sync";
 import { getDb } from "./lib/db";
 import { searchEntriesInArchive } from "./stores/dataStore";
@@ -56,6 +57,7 @@ function App() {
   const [showStartWindow, setShowStartWindow] = useState(true);
   const [showArchivePrompt, setShowArchivePrompt] = useState(false);
   const [showArchiveSelect, setShowArchiveSelect] = useState(false);
+  const [showArchiveManage, setShowArchiveManage] = useState(false);
   const [decorations, setDecorations] = useState<Extension[]>([]);
 
   // Editor view reference for AI chat integration
@@ -68,13 +70,16 @@ function App() {
   // Panel layout hook
   const {
     leftWidth,
-    rightWidth,
+    previewWidth,
+    chatWidth,
     panelsVisible,
+    previewVisible,
+    chatVisible,
     togglePanels,
+    togglePreview,
+    toggleChat,
     startDragging,
     dragging,
-    rightPanelMode,
-    toggleRightPanelMode,
   } = usePanelLayout();
 
   // Archive management hook
@@ -240,6 +245,30 @@ function App() {
     setShowEntryPrompt(false);
   };
 
+  const handleArchiveDeleted = async (archiveId: string) => {
+    if (archiveManagement.archive?.id === archiveId) {
+      archiveManagement.clearArchiveState();
+      entryManagement.clearEntryState();
+      setShowStartWindow(true);
+    }
+    await archiveManagement.refreshArchives();
+  };
+
+  const handleTomeDeleted = async (tomeId: string) => {
+    if (archiveManagement.tome?.id === tomeId) {
+      archiveManagement.clearTomeState();
+      entryManagement.clearEntryState();
+    }
+    if (archiveManagement.archive) {
+      await archiveManagement.refreshTomes();
+    }
+  };
+
+  const handleEntryDeleted = (entryId: string) => {
+    entryManagement.handleTabClose(entryId);
+    entryManagement.refreshEntries();
+  };
+
   return (
     <ThemeProvider>
       <StartupNotification />
@@ -289,6 +318,15 @@ function App() {
         />
       )}
 
+      {showArchiveManage && (
+        <ArchiveManageDialog
+          onClose={() => setShowArchiveManage(false)}
+          onArchiveDeleted={handleArchiveDeleted}
+          onTomeDeleted={handleTomeDeleted}
+          onEntryDeleted={handleEntryDeleted}
+        />
+      )}
+
       <StartWindow
         archives={archiveManagement.archives}
         onArchiveClick={archiveManagement.handleArchiveOpen}
@@ -310,6 +348,7 @@ function App() {
         onSaveAll={entryManagement.handleSaveAll}
         onClose={handleClose}
         onPreferences={() => setShowPreferences(true)}
+        onManageArchives={() => setShowArchiveManage(true)}
         onSearch={async (query) => {
           if (!archiveManagement.archive) return [];
           return searchEntriesInArchive(archiveManagement.archive.id, query);
@@ -322,8 +361,10 @@ function App() {
         onTogglePanels={togglePanels}
         onToggleAI={aiSuggestions.toggleAISuggestions}
         aiActive={aiSuggestions.showAISuggestions}
-        onToggleChat={toggleRightPanelMode}
-        chatActive={rightPanelMode === 'chat'}
+        onToggleChat={toggleChat}
+        chatActive={chatVisible}
+        onTogglePreview={togglePreview}
+        previewActive={previewVisible}
       />
 
       <div className="app">
@@ -382,37 +423,19 @@ function App() {
           )}
         </div>
 
-        {/* DIVIDER */}
-        <div
-          className={`divider ${dragging === 'right' ? 'dragging' : ''}`}
-          onMouseDown={() => startDragging("right")}
-          style={{ width: DIVIDER_SIZE }}
-        />
-
-        {/* RIGHT PANEL - Chat or Preview */}
-        <div
-          id="preview-container"
-          className="panel"
-          style={{ width: rightWidth, overflow: "auto", padding: "0px" }}
-        >
-          {rightPanelMode === 'chat' ? (
-            <AIChatPanel
-              messages={aiChat.messages}
-              status={aiChat.status}
-              error={aiChat.error}
-              onSendMessage={aiChat.sendMessage}
-              onClearHistory={aiChat.clearHistory}
-              onApplyEdit={aiChat.applyEditSuggestion}
-              onRejectEdit={aiChat.rejectEditSuggestion}
-              onRetry={aiChat.retryLastMessage}
-              onInsertCode={(code) => {
-                if (editorViewRef.current) {
-                  insertAtCursor(editorViewRef.current, code);
-                }
-              }}
+        {/* PREVIEW PANEL - conditionally rendered */}
+        {previewVisible && (
+          <>
+            <div
+              className={`divider ${dragging === 'preview' ? 'dragging' : ''}`}
+              onMouseDown={() => startDragging("preview")}
+              style={{ width: DIVIDER_SIZE }}
             />
-          ) : (
-            <>
+            <div
+              id="preview-container"
+              className="panel preview-panel"
+              style={{ width: previewWidth, overflow: "auto", padding: "0px" }}
+            >
               {aiSuggestions.showAISuggestions && (
                 <AILinkSuggestions
                   suggestions={aiSuggestions.aiSuggestions}
@@ -425,9 +448,40 @@ function App() {
                 />
               )}
               <PreviewPanel markdown={entryManagement.markdown} />
-            </>
-          )}
-        </div>
+            </div>
+          </>
+        )}
+
+        {/* CHAT PANEL - conditionally rendered */}
+        {chatVisible && (
+          <>
+            <div
+              className={`divider ${dragging === 'chat' ? 'dragging' : ''}`}
+              onMouseDown={() => startDragging("chat")}
+              style={{ width: DIVIDER_SIZE }}
+            />
+            <div
+              className="panel chat-panel"
+              style={{ width: chatWidth, overflow: "auto", padding: "0px" }}
+            >
+              <AIChatPanel
+                messages={aiChat.messages}
+                status={aiChat.status}
+                error={aiChat.error}
+                onSendMessage={aiChat.sendMessage}
+                onClearHistory={aiChat.clearHistory}
+                onApplyEdit={aiChat.applyEditSuggestion}
+                onRejectEdit={aiChat.rejectEditSuggestion}
+                onRetry={aiChat.retryLastMessage}
+                onInsertCode={(code) => {
+                  if (editorViewRef.current) {
+                    insertAtCursor(editorViewRef.current, code);
+                  }
+                }}
+              />
+            </div>
+          </>
+        )}
       </div>
     </ThemeProvider>
   );

@@ -3,7 +3,7 @@ import { Entry } from "../types/entry";
 import { Tome } from "../types/tome";
 import { Archive } from "../types/archive";
 import { CreateEntry, saveLocalEntry, saveAllEntries } from "../utils/appUtils";
-import { saveEntry } from "../stores/dataStore";
+import { saveEntry, getEntriesByTomeId } from "../stores/dataStore";
 import { aiLinkService } from "../services/aiLinkService";
 
 interface EntryManagementState {
@@ -32,6 +32,7 @@ interface EntryManagementActions {
   handleTabReorder: (dragId: string, targetId: string) => void;
   handleCreateTab: (entry: Entry) => void;
   clearEntryState: () => void;
+  refreshEntries: () => Promise<void>;
 }
 
 interface UseEntryManagementOptions {
@@ -230,6 +231,13 @@ export function useEntryManagement(
     setMarkdown("");
   }, []);
 
+  const refreshEntries = useCallback(async () => {
+    if (!tome) return;
+    const fetchedEntries = await getEntriesByTomeId(tome.id);
+    setEntries(fetchedEntries);
+    setEntryRefreshKey(prev => prev + 1);
+  }, [tome]);
+
   return {
     entries,
     entry,
@@ -253,5 +261,6 @@ export function useEntryManagement(
     handleTabReorder,
     handleCreateTab,
     clearEntryState,
+    refreshEntries,
   };
 }

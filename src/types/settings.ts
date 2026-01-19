@@ -71,7 +71,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     theme: 'dark',
     customAppThemeId: null,
     customEditorThemeId: null,
-    accentColor: '#007acc',
+    accentColor: '',  // Empty means use theme's default accent
     sidebarWidth: 250,
     showPreviewPanel: true,
   },
