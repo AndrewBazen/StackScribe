@@ -3,7 +3,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from settings import REQ_LLM_BASE_URL, REQ_LLM_API_KEY, REQ_LLM_MODEL, REQ_LLM_TEMPERATURE, REQ_LLM_MAX_TOKENS
-import requests
+from deps import get_http_client
+import httpx
 import json
 import uuid
 from datetime import datetime
@@ -112,7 +113,7 @@ def parse_edit_suggestion(content: str, context: ChatContext) -> Optional[EditSu
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
-    """Handle a chat request and return a response."""
+    """Handle a chat request and return a response using async HTTP client."""
     if not REQ_LLM_BASE_URL:
         raise HTTPException(
             status_code=400,
@@ -140,14 +141,14 @@ async def chat(req: ChatRequest):
             "stream": False
         }
 
-        response = requests.post(
+        http_client = get_http_client()
+        response = await http_client.post(
             f"{REQ_LLM_BASE_URL}/chat/completions",
             headers={
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {REQ_LLM_API_KEY}",
             },
-            data=json.dumps(payload),
-            timeout=120
+            json=payload,
         )
 
         if response.status_code >= 400:
@@ -194,7 +195,7 @@ async def chat(req: ChatRequest):
 
 @router.post("/chat/stream")
 async def chat_stream(req: ChatRequest):
-    """Handle a chat request with streaming response."""
+    """Handle a chat request with streaming response using async HTTP client."""
     if not REQ_LLM_BASE_URL:
         raise HTTPException(
             status_code=400,
@@ -221,51 +222,50 @@ async def chat_stream(req: ChatRequest):
                 "stream": True
             }
 
-            response = requests.post(
-                f"{REQ_LLM_BASE_URL}/chat/completions",
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {REQ_LLM_API_KEY}",
-                },
-                data=json.dumps(payload),
-                timeout=120,
-                stream=True
-            )
+            # Use httpx for streaming (separate client for streaming)
+            async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as stream_client:
+                async with stream_client.stream(
+                    "POST",
+                    f"{REQ_LLM_BASE_URL}/chat/completions",
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {REQ_LLM_API_KEY}",
+                    },
+                    json=payload,
+                ) as response:
+                    if response.status_code >= 400:
+                        error_data = {"error": f"LLM error: HTTP {response.status_code}"}
+                        yield f"data: {json.dumps(error_data)}\n\n"
+                        return
 
-            if response.status_code >= 400:
-                error_data = {"error": f"LLM error: HTTP {response.status_code}"}
-                yield f"data: {json.dumps(error_data)}\n\n"
-                return
+                    full_content = ""
+                    message_id = str(uuid.uuid4())
 
-            full_content = ""
-            message_id = str(uuid.uuid4())
+                    async for line in response.aiter_lines():
+                        if line:
+                            if line.startswith("data: "):
+                                data_str = line[6:]
+                                if data_str == "[DONE]":
+                                    break
+                                try:
+                                    chunk_data = json.loads(data_str)
+                                    delta = chunk_data.get("choices", [{}])[0].get("delta", {})
+                                    content = delta.get("content", "")
+                                    if content:
+                                        full_content += content
+                                        yield f"data: {json.dumps({'delta': content, 'done': False})}\n\n"
+                                except json.JSONDecodeError:
+                                    continue
 
-            for line in response.iter_lines():
-                if line:
-                    line_str = line.decode('utf-8')
-                    if line_str.startswith("data: "):
-                        data_str = line_str[6:]
-                        if data_str == "[DONE]":
-                            break
-                        try:
-                            chunk_data = json.loads(data_str)
-                            delta = chunk_data.get("choices", [{}])[0].get("delta", {})
-                            content = delta.get("content", "")
-                            if content:
-                                full_content += content
-                                yield f"data: {json.dumps({'delta': content, 'done': False})}\n\n"
-                        except json.JSONDecodeError:
-                            continue
+                    # Send final message
+                    final_message = ChatMessage(
+                        id=message_id,
+                        role="assistant",
+                        content=full_content,
+                        timestamp=datetime.utcnow().isoformat() + "Z"
+                    )
 
-            # Send final message
-            final_message = ChatMessage(
-                id=message_id,
-                role="assistant",
-                content=full_content,
-                timestamp=datetime.utcnow().isoformat() + "Z"
-            )
-
-            yield f"data: {json.dumps({'message': final_message.dict(), 'done': True, 'status': 'success'})}\n\n"
+                    yield f"data: {json.dumps({'message': final_message.dict(), 'done': True, 'status': 'success'})}\n\n"
 
         except Exception as e:
             error_msg = str(e)

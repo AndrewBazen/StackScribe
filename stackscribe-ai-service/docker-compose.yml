@@ -11,6 +11,19 @@ services:
       - QDRANT__SERVICE__HTTP_PORT=6333
       - QDRANT__SERVICE__GRPC_PORT=6334
     restart: unless-stopped
+    # Resource limits for 32GB/12-thread system
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+        reservations:
+          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     # Note: We intentionally omit a container-level healthcheck here because the upstream
     # Qdrant image does not reliably include curl/wget, which can produce false "unhealthy"
     # statuses even when the service is running. Our host-level checks (and the Tauri app)
@@ -22,7 +35,7 @@ services:
     ports:
       - "11434:11434"
     volumes:
-      - ollama:/root/.
+      - ollama:/root/.ollama
     healthcheck:
       test: ["CMD", "ollama", "list"]
       interval: 30s
@@ -35,6 +48,45 @@ services:
       - OLLAMA_MAX_LOADED_MODELS=1
       - OLLAMA_MAX_QUEUE=64
     restart: unless-stopped
+    # Resource limits: CPU-only inference (4GB VRAM insufficient for LLM layers)
+    deploy:
+      resources:
+        limits:
+          cpus: "6"
+          memory: 12G
+        reservations:
+          memory: 4G
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    image: redis:7-alpine
+    container_name: stackscribe-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
   ai-service:
     build:
       context: .
@@ -43,8 +95,12 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - qdrant
-      - ollama
+      qdrant:
+        condition: service_started
+      ollama:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
@@ -52,14 +108,37 @@ services:
       - REQ_LLM_API_KEY=local-api-key
       - REQ_LLM_MODEL=llama31-8b-instruct-q4k-4k
       - EMBED_MODEL=nomic-ai/nomic-embed-text-v1
-      - RERANKER_ID=BAAI/bge-reranker-base
-      - THRESHOLD=0.05
+      # Faster reranker model for lower latency
+      - RERANKER_ID=cross-encoder/ms-marco-MiniLM-L-6-v2
+      # Proper threshold after sigmoid normalization (0-1 scale)
+      - THRESHOLD=0.80
       - TOP_K=8
       - COLLECTION=note_chunks
+      # Redis for persistent cache
+      - REDIS_URL=redis://redis:6379/0
+      # GPU device for embeddings/reranking (GTX 970)
+      - TORCH_DEVICE=cuda
     volumes:
       - ./models:/app/models
       - ./cache:/app/cache
     restart: unless-stopped
+    # Resource limits + GPU access for embeddings
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 6G
+        reservations:
+          memory: 2G
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -71,6 +150,8 @@ volumes:
   qdrant_storage:
     driver: local
   ollama:
+    driver: local
+  redis_data:
     driver: local
 
 networks:

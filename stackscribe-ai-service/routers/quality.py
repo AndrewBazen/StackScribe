@@ -1,29 +1,38 @@
 from fastapi import APIRouter, HTTPException
 from typing import List, Dict, Any
 from lib.ambiguity_rules import rule_findings_for_chunk
-from lib.llm import llm_refine_findings
+from lib.llm import llm_refine_findings_async
 from lib.json_extract import extract_json_array, extract_json_object
 from settings import REQ_LLM_BASE_URL, REQ_LLM_API_KEY, REQ_LLM_MODEL, REQ_LLM_TEMPERATURE, REQ_LLM_MAX_TOKENS
 from lib.llm import RequirementOut, RequirementsRequest, DetectAmbiguityRequest, AmbiguityFindingOut
-import requests
+from deps import get_http_client
+import asyncio
 import json
+
+# Semaphore to limit concurrent LLM calls (prevent overload)
+LLM_SEMAPHORE = asyncio.Semaphore(4)
 
 router = APIRouter(prefix="/api", tags=["quality"])
 
 # ---------- Ambiguity detection endpoints --------
 @router.post("/detect_ambiguity", response_model=List[AmbiguityFindingOut])
 async def detect_ambiguity(req: DetectAmbiguityRequest):
-    all_findings: List[Dict[str, Any]] = []
+    """Detect ambiguities with parallel LLM refinement."""
 
-    for ch in req.chunks:
+    async def process_chunk(ch):
         if not ch.text.strip():
-            continue
-
+            return []
         findings = rule_findings_for_chunk(ch)
         if not findings:
-            continue
+            return []
+        async with LLM_SEMAPHORE:
+            return await llm_refine_findings_async(ch.text, findings)
 
-        refined = llm_refine_findings(ch.text, findings)
+    # Process all chunks concurrently (semaphore limits parallelism)
+    results = await asyncio.gather(*[process_chunk(ch) for ch in req.chunks])
+
+    all_findings: List[Dict[str, Any]] = []
+    for refined in results:
         all_findings.extend(refined)
 
     return all_findings
@@ -32,12 +41,9 @@ async def detect_ambiguity(req: DetectAmbiguityRequest):
 # -------- Requirements generation endpoints --------
 @router.post("/generate_requirements", response_model=List[RequirementOut])
 async def generate_requirements(req: RequirementsRequest):
+    """Generate requirements with parallel LLM calls using connection pooling."""
     if not REQ_LLM_BASE_URL:
         raise HTTPException(status_code=400, detail="REQ_LLM_BASE_URL is not set (no local LLM config available)")
-    
-    results: List[RequirementOut] = []
-
-    errors: List[str] = []
 
     system = (
         "You are a rigorous requirements-engineering assistant. "
@@ -60,17 +66,16 @@ async def generate_requirements(req: RequirementsRequest):
         if isinstance(value, list):
             return [str(v) for v in value]
         if isinstance(value, dict):
-            # Convert dict to list of "key: value" strings
             result = [f"{k}: {v}" for k, v in value.items()]
-            print(f"[DEBUG] coerce_list converted dict to list for {label}: {result}")
             return result
         if isinstance(value, str):
             return [value]
         raise Exception(f"LLM returned unexpected type for {label}: {type(value).__name__} = {value}")
 
-    for chunk in req.chunks:
+    async def process_chunk(chunk):
+        """Process a single chunk with the LLM."""
         if not chunk.text.strip():
-            continue
+            return [], None
 
         user = f"<<<CHUNK>>>\n{chunk.text}\n<<<END>>>"
         if req.prompt:
@@ -87,62 +92,75 @@ async def generate_requirements(req: RequirementsRequest):
         }
 
         try:
-            r = requests.post(
-                f"{REQ_LLM_BASE_URL}/chat/completions",
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {REQ_LLM_API_KEY}",
-                },
-                data=json.dumps(payload),
-                timeout=120,
-            )
-            if r.status_code >= 400:
-                raise Exception(f"LLM error: HTTP {r.status_code} - {r.text}")
+            async with LLM_SEMAPHORE:
+                http_client = get_http_client()
+                r = await http_client.post(
+                    f"{REQ_LLM_BASE_URL}/chat/completions",
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {REQ_LLM_API_KEY}",
+                    },
+                    json=payload,
+                )
+                if r.status_code >= 400:
+                    raise Exception(f"LLM error: HTTP {r.status_code} - {r.text}")
 
-            data = r.json()
-            raw = data["choices"][0]["message"]["content"].strip()
-            json_text = extract_json_array(raw)
+                data = r.json()
+                raw = data["choices"][0]["message"]["content"].strip()
+                json_text = extract_json_array(raw)
 
-            parsed: List[Dict[str, Any]] = []
-            if json_text != "[]":
-                parsed = json.loads(json_text)
-            else:
-                obj_text = extract_json_object(raw)
-                if obj_text:
-                    obj = json.loads(obj_text)
-                    if isinstance(obj, dict) and isinstance(obj.get("requirements"), list):
-                        parsed = obj["requirements"]
-                    elif isinstance(obj, dict):
-                        parsed = [obj]
+                parsed: List[Dict[str, Any]] = []
+                if json_text != "[]":
+                    parsed = json.loads(json_text)
+                else:
+                    obj_text = extract_json_object(raw)
+                    if obj_text:
+                        obj = json.loads(obj_text)
+                        if isinstance(obj, dict) and isinstance(obj.get("requirements"), list):
+                            parsed = obj["requirements"]
+                        elif isinstance(obj, dict):
+                            parsed = [obj]
 
-            if not isinstance(parsed, list):
-                raise Exception(f"LLM returned non-array JSON: {type(parsed).__name__}")
+                if not isinstance(parsed, list):
+                    raise Exception(f"LLM returned non-array JSON: {type(parsed).__name__}")
 
-            if parsed == [] and raw and raw.strip() != "[]":
-                raise Exception(f"LLM returned no JSON array. Raw: {raw[:300]}")
+                if parsed == [] and raw and raw.strip() != "[]":
+                    raise Exception(f"LLM returned no JSON array. Raw: {raw[:300]}")
 
-            for item in parsed:
-                if not isinstance(item, dict):
-                    raise Exception("LLM returned non-object in requirements array")
-                results.append(RequirementOut(
-                    title=item.get("title", ""),
-                    description=item.get("description", ""),
-                    acceptanceCriteria=coerce_list(item.get("acceptanceCriteria", []), "acceptanceCriteria"),
-                    nonFunctionalRequirements=coerce_list(item.get("nonFunctionalRequirements", []), "nonFunctionalRequirements"),
-                    constraints=coerce_list(item.get("constraints", []), "constraints"),
-                    dependencies=coerce_list(item.get("dependencies", []), "dependencies"),
-                    risks=coerce_list(item.get("risks", []), "risks"),
-                    assumptions=coerce_list(item.get("assumptions", []), "assumptions"),
-                    chunkId=chunk.id,
-                    start_offset=chunk.start_offset,
-                    end_offset=chunk.end_offset,
-                ))
+                chunk_results = []
+                for item in parsed:
+                    if not isinstance(item, dict):
+                        raise Exception("LLM returned non-object in requirements array")
+                    chunk_results.append(RequirementOut(
+                        title=item.get("title", ""),
+                        description=item.get("description", ""),
+                        acceptanceCriteria=coerce_list(item.get("acceptanceCriteria", []), "acceptanceCriteria"),
+                        nonFunctionalRequirements=coerce_list(item.get("nonFunctionalRequirements", []), "nonFunctionalRequirements"),
+                        constraints=coerce_list(item.get("constraints", []), "constraints"),
+                        dependencies=coerce_list(item.get("dependencies", []), "dependencies"),
+                        risks=coerce_list(item.get("risks", []), "risks"),
+                        assumptions=coerce_list(item.get("assumptions", []), "assumptions"),
+                        chunkId=chunk.id,
+                        start_offset=chunk.start_offset,
+                        end_offset=chunk.end_offset,
+                    ))
+                return chunk_results, None
 
         except Exception as e:
-            # Non-fatal: continue with next chunk
             error_msg = f"requirements generation error for chunk {chunk.id}: {e}"
-            errors.append(error_msg)
-            print(f"? {error_msg}")
+            print(f"⚠️ {error_msg}")
+            return [], error_msg
+
+    # Process all chunks concurrently
+    results_and_errors = await asyncio.gather(*[process_chunk(chunk) for chunk in req.chunks])
+
+    results: List[RequirementOut] = []
+    errors: List[str] = []
+    for chunk_results, error in results_and_errors:
+        results.extend(chunk_results)
+        if error:
+            errors.append(error)
+
     if not results and errors:
         detail = "; ".join(errors[:3])
         if len(errors) > 3:

@@ -3,13 +3,24 @@ import re
 import spacy
 
 # ---------- Global config ----------
-THRESHOLD   = float(os.getenv("THRESHOLD", "0.05"))
+# Threshold after sigmoid normalization (0-1 scale) - 80% confidence minimum
+THRESHOLD   = float(os.getenv("THRESHOLD", "0.80"))
 TOP_K       = int(os.getenv("TOP_K", "8"))
 COLLECTION  = os.getenv("COLLECTION", "note_chunks")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-ai/nomic-embed-text-v1")
-RERANKER_ID = os.getenv("RERANKER_ID", "BAAI/bge-reranker-base")
+# Faster reranker model for lower latency
+RERANKER_ID = os.getenv("RERANKER_ID", "cross-encoder/ms-marco-MiniLM-L-6-v2")
 CHUNK_TOKENS = 200
 BATCH_SIZE = 1_000
+
+# ---------- Stopwords for code symbol filtering ----------
+# Prevents matching common words like "the", "and", "for" in code_symbol_bonus
+STOPWORDS = frozenset({
+    "the", "and", "for", "with", "from", "this", "that", "have", "are", "was",
+    "will", "can", "not", "all", "any", "but", "has", "had", "get", "set",
+    "new", "use", "add", "end", "let", "var", "def", "class", "func", "void",
+    "int", "str", "bool", "true", "false", "null", "none", "self", "return",
+})
 
 # ---------- Qdrant connection config ----------
 QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
