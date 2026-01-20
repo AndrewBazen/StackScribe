@@ -31,8 +31,8 @@ RUN grep -v "^torch==" requirements.txt > requirements_no_torch.txt \
     && pip install --no-cache-dir -r requirements_no_torch.txt \
     && rm requirements_no_torch.txt
 
-# Download spaCy model
-RUN python -m spacy download en_core_web_sm
+# Download spaCy model (explicit version for compatibility)
+RUN pip install --no-cache-dir https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
 
 # Copy application code
 COPY . .
