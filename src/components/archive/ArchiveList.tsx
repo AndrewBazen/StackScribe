@@ -1,24 +1,23 @@
 import { Archive } from "../../types/archive";
 import * as ScrollArea from "@radix-ui/react-scroll-area";
-import { SyncStatus } from "../../lib/sync";
 
 interface ArchiveListProps {
     archives: Archive[];
     onArchiveClick: (archive: Archive) => void;
-    syncStatus: SyncStatus;
+    isReady: boolean;
 }
 
 export default function ArchiveList(props: ArchiveListProps) {
-    const { archives, onArchiveClick, syncStatus } = props;
-    
+    const { archives, onArchiveClick, isReady } = props;
+
     const handleArchiveClick = (archive: Archive) => {
-        if (!syncStatus.isReady) {
-            console.warn('⚠️ Cannot open archive while sync is in progress');
+        if (!isReady) {
+            console.warn('⚠️ Cannot open archive while app is initializing');
             return;
         }
         onArchiveClick(archive);
     };
-    
+
     return (
         <ScrollArea.Root className="list">
             <ScrollArea.Viewport className="list-viewport">
@@ -27,9 +26,9 @@ export default function ArchiveList(props: ArchiveListProps) {
                         key={archive.id}
                         onClick={() => handleArchiveClick(archive)}
                         className="list-item"
-                        style={{ 
-                            opacity: syncStatus.isReady ? 1 : 0.5,
-                            cursor: syncStatus.isReady ? 'pointer' : 'not-allowed'
+                        style={{
+                            opacity: isReady ? 1 : 0.5,
+                            cursor: isReady ? 'pointer' : 'not-allowed'
                         }}
                     >
                         {archive.name}

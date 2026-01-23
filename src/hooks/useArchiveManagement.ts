@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from "react";
 import { Archive } from "../types/archive";
 import { Tome } from "../types/tome";
 import { Entry } from "../types/entry";
-import { SyncStatus } from "../lib/sync";
 import { CreateTome, CreateEntry, OpenArchive, CreateArchive, GetArchives } from "../utils/appUtils";
 import { getTomesByArchiveId } from "../stores/dataStore";
 
@@ -31,7 +30,7 @@ interface ArchiveManagementActions {
 }
 
 interface UseArchiveManagementOptions {
-  syncStatus: SyncStatus;
+  isReady: boolean;
   onArchiveOpened?: () => void;
   onTomeSelected?: (tome: Tome, entries: Entry[]) => void;
 }
@@ -39,7 +38,7 @@ interface UseArchiveManagementOptions {
 export function useArchiveManagement(
   options: UseArchiveManagementOptions
 ): ArchiveManagementState & ArchiveManagementActions {
-  const { syncStatus, onArchiveOpened, onTomeSelected } = options;
+  const { isReady, onArchiveOpened, onTomeSelected } = options;
 
   const [archive, setArchive] = useState<Archive | null>(null);
   const [archives, setArchives] = useState<Archive[]>([]);
@@ -55,16 +54,16 @@ export function useArchiveManagement(
     }
   }, []);
 
-  // Fetch archives when sync is ready
+  // Fetch archives when app is ready
   useEffect(() => {
-    if (syncStatus.isReady) {
+    if (isReady) {
       refreshArchives();
     }
-  }, [syncStatus.isReady, refreshArchives]);
+  }, [isReady, refreshArchives]);
 
   const handleArchiveOpen = useCallback(async (selectedArchive: Archive) => {
-    if (!syncStatus.isReady) {
-      console.warn('⚠️ Cannot open archive while sync is in progress');
+    if (!isReady) {
+      console.warn('⚠️ Cannot open archive while app is initializing');
       return;
     }
 
@@ -76,14 +75,14 @@ export function useArchiveManagement(
 
     setTome(null);
     onArchiveOpened?.();
-  }, [syncStatus.isReady, onArchiveOpened]);
+  }, [isReady, onArchiveOpened]);
 
   const handleArchiveCreate = useCallback(async (
     newArchive: Archive,
     tomeName: string
   ): Promise<{ archive: Archive; tome: Tome; entry: Entry } | null> => {
-    if (!syncStatus.isReady) {
-      console.warn('⚠️ Cannot create archive while sync is in progress');
+    if (!isReady) {
+      console.warn('⚠️ Cannot create archive while app is initializing');
       return null;
     }
 
@@ -112,7 +111,7 @@ export function useArchiveManagement(
     }
 
     return { archive: createdArchive, tome: createdTome, entry: createdEntry };
-  }, [syncStatus.isReady, refreshArchives]);
+  }, [isReady, refreshArchives]);
 
   const handleTomeClick = useCallback((clickedTome: Tome, entries: Entry[]) => {
     if (!clickedTome) {

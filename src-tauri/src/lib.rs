@@ -1,10 +1,67 @@
-use std::{process::{Command, Stdio, Child}, sync::Mutex};
+use std::{process::{Command, Stdio}, env};
 use tauri::Emitter;
+use dotenvy::dotenv;
+use serde::{Deserialize, Serialize};
+use futures_util::StreamExt;
 
-// AI service now handled via Python HTTP API
+// --------- Streaming Chat Types ---------
 
-// Global state for managing Python service
-static PYTHON_SERVICE: Mutex<Option<Child>> = Mutex::new(None);
+#[derive(Clone, Serialize, Deserialize, Debug)]
+struct ChatMessage {
+    id: Option<String>,
+    role: String,
+    content: String,
+    timestamp: Option<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+struct ChatContext {
+    #[serde(rename = "currentDocument")]
+    current_document: String,
+    #[serde(rename = "entryId")]
+    entry_id: Option<String>,
+    #[serde(rename = "entryName")]
+    entry_name: Option<String>,
+    #[serde(rename = "tomeId")]
+    tome_id: Option<String>,
+    #[serde(rename = "archiveId")]
+    archive_id: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+struct ChatChunkEvent {
+    request_id: String,
+    delta: String,
+}
+
+#[derive(Clone, Serialize)]
+struct ChatCompleteEvent {
+    request_id: String,
+    message: Option<ChatMessage>,
+    status: String,
+    error: Option<String>,
+}
+
+// AI service configuration via environment variables
+// Required: Set AI_SERVICE_URL to your server (e.g., "http://192.168.1.197:8000")
+fn get_ai_service_url() -> Option<String> {
+    env::var("AI_SERVICE_URL").ok()
+}
+
+fn get_qdrant_url() -> Option<String> {
+    // Check for explicit QDRANT_URL first, otherwise derive from AI_SERVICE_URL
+    if let Ok(url) = env::var("QDRANT_URL") {
+        return Some(url);
+    }
+    // Derive from AI service URL (same host, port 6333)
+    let ai_url = get_ai_service_url()?;
+    if let Some(host) = ai_url.strip_prefix("http://") {
+        if let Some(host_part) = host.split(':').next() {
+            return Some(format!("http://{}:6333", host_part));
+        }
+    }
+    None
+}
 
 // --------- app commands ---------
 // test round trip
@@ -34,211 +91,286 @@ async fn get_current_dir() -> Result<String, String> {
     Ok(current_dir)
 }
 
-// AI services are now handled via Python HTTP API
-// Use start_python_service, stop_python_service, and python_service_status instead
-
-// Start AI service containers
+// Get the configured AI service URL
 #[tauri::command]
-async fn start_python_service() -> Result<serde_json::Value, String> {
-    start_ai_service_internal().await
-}
+async fn get_ai_service_config() -> Result<serde_json::Value, String> {
+    let ai_url = get_ai_service_url();
+    let qdrant_url = get_qdrant_url();
 
-// Internal function to start AI service (used by startup and manual commands)
-async fn start_ai_service_internal() -> Result<serde_json::Value, String> {
-    // Check if containers are already running (without holding the lock)
-    let status_result = check_containers_status().await;
-    if let Ok(status) = &status_result {
-        if status.get("is_running").and_then(|v| v.as_bool()).unwrap_or(false) {
-            // If containers are running but don't support newer endpoints, restart to pick up updates.
-            if ai_service_supports_indexing().await {
-                return Ok(serde_json::json!({
-                    "status": "already_running",
-                    "message": "AI service containers are already running"
-                }));
-            } else {
-                println!("🔁 AI service is running but missing /api/index_entries; restarting containers to update...");
-            }
-        }
-    }
-    
-    // Try to start the AI service using Docker Compose
-    let child = Command::new("bash")
-        .arg("stackscribe-ai-service/docker-start.sh")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Failed to start AI service: {}", e))?;
-    
-    // Now acquire the lock to store the child process
-    {
-        let mut service = PYTHON_SERVICE.lock().map_err(|e| e.to_string())?;
-        *service = Some(child);
-    }
-    
     Ok(serde_json::json!({
-        "status": "started",
-        "message": "AI service containers are starting up..."
+        "ai_service_url": ai_url,
+        "qdrant_url": qdrant_url,
+        "configured": ai_url.is_some()
     }))
 }
 
-// Check if the running AI service exposes the indexing endpoint (used by the desktop app)
-async fn ai_service_supports_indexing() -> bool {
-    // Use OpenAPI spec so we don't need to hit the endpoint itself (which can be expensive)
-    if let Ok(response) = reqwest::get("http://localhost:8000/openapi.json").await {
+// Check AI service health (remote server)
+#[tauri::command]
+async fn python_service_status() -> Result<serde_json::Value, String> {
+    let ai_url = match get_ai_service_url() {
+        Some(url) => url,
+        None => {
+            return Ok(serde_json::json!({
+                "is_running": false,
+                "is_healthy": false,
+                "error": "AI_SERVICE_URL environment variable not set",
+                "services": {
+                    "qdrant": { "running": false, "healthy": false, "endpoint": null },
+                    "ai_service": { "running": false, "healthy": false, "endpoint": null }
+                }
+            }));
+        }
+    };
+
+    let qdrant_url = get_qdrant_url().unwrap_or_default();
+
+    // Check if services are responding via HTTP
+    let mut qdrant_healthy = false;
+    let mut ai_service_healthy = false;
+
+    // Check Qdrant health
+    if !qdrant_url.is_empty() {
+        if let Ok(response) = reqwest::get(&format!("{}/", qdrant_url)).await {
+            qdrant_healthy = response.status().is_success();
+        }
+    }
+
+    // Check AI service health
+    if let Ok(response) = reqwest::get(&format!("{}/health", ai_url)).await {
         if response.status().is_success() {
-            if let Ok(body) = response.text().await {
-                return body.contains("\"/api/index_entries\"");
+            if let Ok(data) = response.json::<serde_json::Value>().await {
+                ai_service_healthy = data.get("status").and_then(|s| s.as_str()) == Some("healthy");
             }
         }
     }
-    false
-}
 
-// Helper function to check container status
-async fn check_containers_status() -> Result<serde_json::Value, String> {
-    let containers_output = Command::new("docker-compose")
-        .arg("-f")
-        .arg("stackscribe-ai-service/docker-compose.yml")
-        .arg("ps")
-        .arg("-q")
-        .output()
-        .map_err(|e| format!("Failed to check container status: {}", e))?;
-    
-    let containers_running = !containers_output.stdout.is_empty();
-    
     Ok(serde_json::json!({
-        "is_running": containers_running
+        "is_running": ai_service_healthy,
+        "is_healthy": ai_service_healthy && qdrant_healthy,
+        "services": {
+            "qdrant": {
+                "running": qdrant_healthy,
+                "healthy": qdrant_healthy,
+                "endpoint": qdrant_url
+            },
+            "ai_service": {
+                "running": ai_service_healthy,
+                "healthy": ai_service_healthy,
+                "endpoint": ai_url
+            }
+        }
     }))
 }
 
-// Startup function to auto-start AI service
+// Startup function - check if remote AI service is available
 #[tauri::command]
 async fn startup_ai_service() -> Result<serde_json::Value, String> {
-    println!("🚀 Starting AI service on app startup...");
-    
-    // Check if Docker is available
-    let docker_check = Command::new("docker")
-        .arg("info")
-        .output();
-    
-    match docker_check {
-        Ok(output) if output.status.success() => {
-            println!("✅ Docker is available, starting AI service...");
-            
-            // Start the AI service in the background
-            match start_ai_service_internal().await {
-                Ok(result) => {
-                    println!("🤖 AI service startup initiated");
-                    Ok(serde_json::json!({
-                        "status": "success",
-                        "message": "AI service startup initiated",
-                        "auto_started": true,
-                        "details": result
-                    }))
-                },
-                Err(e) => {
-                    println!("⚠️ Failed to start AI service on startup: {}", e);
-                    Ok(serde_json::json!({
-                        "status": "error",
-                        "message": format!("Failed to auto-start AI service: {}", e),
-                        "auto_started": false
-                    }))
+    println!("🚀 Checking AI service connection on app startup...");
+
+    let ai_url = match get_ai_service_url() {
+        Some(url) => url,
+        None => {
+            println!("⚠️ AI_SERVICE_URL not configured");
+            return Ok(serde_json::json!({
+                "status": "not_configured",
+                "message": "AI_SERVICE_URL environment variable not set. Set it to your AI server address (e.g., http://192.168.1.197:8000)",
+                "connected": false
+            }));
+        }
+    };
+
+    println!("🔗 Connecting to AI service at: {}", ai_url);
+
+    // Check if the remote AI service is reachable
+    match reqwest::get(&format!("{}/health", ai_url)).await {
+        Ok(response) if response.status().is_success() => {
+            if let Ok(data) = response.json::<serde_json::Value>().await {
+                if data.get("status").and_then(|s| s.as_str()) == Some("healthy") {
+                    println!("✅ AI service is healthy at {}", ai_url);
+                    return Ok(serde_json::json!({
+                        "status": "connected",
+                        "message": format!("Connected to AI service at {}", ai_url),
+                        "connected": true,
+                        "endpoint": ai_url
+                    }));
                 }
             }
-        },
-        _ => {
-            println!("⚠️ Docker not available, skipping AI service auto-start");
+            println!("⚠️ AI service responded but reported unhealthy");
             Ok(serde_json::json!({
-                "status": "skipped",
-                "message": "Docker not available, AI service not started",
-                "auto_started": false
+                "status": "unhealthy",
+                "message": format!("AI service at {} is not healthy", ai_url),
+                "connected": false,
+                "endpoint": ai_url
+            }))
+        },
+        Ok(response) => {
+            println!("⚠️ AI service returned error: {}", response.status());
+            Ok(serde_json::json!({
+                "status": "error",
+                "message": format!("AI service at {} returned status {}", ai_url, response.status()),
+                "connected": false,
+                "endpoint": ai_url
+            }))
+        },
+        Err(e) => {
+            println!("❌ Cannot reach AI service at {}: {}", ai_url, e);
+            Ok(serde_json::json!({
+                "status": "unreachable",
+                "message": format!("Cannot connect to AI service at {}: {}", ai_url, e),
+                "connected": false,
+                "endpoint": ai_url
             }))
         }
     }
 }
 
-// Stop AI service using Docker Compose
+// Start streaming chat - returns request_id immediately, emits events as tokens arrive
 #[tauri::command]
-async fn stop_python_service() -> Result<serde_json::Value, String> {
-    let mut service = PYTHON_SERVICE.lock().map_err(|e| e.to_string())?;
-    
-    // Use docker-compose down to stop services properly
-    let output = Command::new("docker-compose")
-        .arg("-f")
-        .arg("stackscribe-ai-service/docker-compose.yml")
-        .arg("down")
-        .output()
-        .map_err(|e| format!("Failed to execute docker-compose down: {}", e))?;
-    
-    if output.status.success() {
-        // Clear the tracked process since we stopped via docker-compose
-        if service.is_some() {
-            *service = None;
+async fn start_chat_stream(
+    app: tauri::AppHandle,
+    messages: Vec<ChatMessage>,
+    context: ChatContext,
+) -> Result<String, String> {
+    let ai_url = get_ai_service_url()
+        .ok_or("AI_SERVICE_URL not configured")?;
+
+    let request_id = uuid::Uuid::new_v4().to_string();
+    let request_id_clone = request_id.clone();
+
+    println!("🚀 Starting chat stream with request_id: {}", request_id);
+
+    // Spawn async task for streaming
+    tauri::async_runtime::spawn(async move {
+        let result = stream_chat_internal(&app, &ai_url, &request_id_clone, messages, context).await;
+
+        if let Err(e) = result {
+            println!("❌ Stream error: {}", e);
+            let _ = app.emit("chat-complete", ChatCompleteEvent {
+                request_id: request_id_clone,
+                message: None,
+                status: "error".to_string(),
+                error: Some(e),
+            });
         }
-        
-        Ok(serde_json::json!({
-            "status": "stopped",
-            "message": "AI service containers stopped successfully"
-        }))
-    } else {
-        let error_msg = String::from_utf8_lossy(&output.stderr);
-        Ok(serde_json::json!({
-            "status": "error",
-            "message": format!("Failed to stop containers: {}", error_msg)
-        }))
-    }
+    });
+
+    Ok(request_id)
 }
 
-// Check AI service status using Docker Compose
-#[tauri::command]
-async fn python_service_status() -> Result<serde_json::Value, String> {
-    // Check if Docker containers are running
-    let containers_output = Command::new("docker-compose")
-        .arg("-f")
-        .arg("stackscribe-ai-service/docker-compose.yml")
-        .arg("ps")
-        .arg("-q")
-        .output()
-        .map_err(|e| format!("Failed to check container status: {}", e))?;
-    
-    let containers_running = !containers_output.stdout.is_empty();
-    
-    // Check if services are responding via HTTP
-    let mut qdrant_healthy = false;
-    let mut ai_service_healthy = false;
-    
-    if containers_running {
-        // Check Qdrant health
-        if let Ok(response) = reqwest::get("http://localhost:6333/").await {
-            qdrant_healthy = response.status().is_success();
-        }
-        
-        // Check AI service health
-        if let Ok(response) = reqwest::get("http://localhost:8000/health").await {
-            if response.status().is_success() {
-                if let Ok(data) = response.json::<serde_json::Value>().await {
-                    ai_service_healthy = data.get("status").and_then(|s| s.as_str()) == Some("healthy");
+async fn stream_chat_internal(
+    app: &tauri::AppHandle,
+    ai_url: &str,
+    request_id: &str,
+    messages: Vec<ChatMessage>,
+    context: ChatContext,
+) -> Result<(), String> {
+    let client = reqwest::Client::new();
+
+    let payload = serde_json::json!({
+        "messages": messages,
+        "context": context,
+        "stream": true
+    });
+
+    println!("📤 Sending request to {}/api/chat/stream", ai_url);
+
+    let response = client
+        .post(format!("{}/api/chat/stream", ai_url))
+        .header("Content-Type", "application/json")
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !response.status().is_success() {
+        return Err(format!("HTTP error: {}", response.status()));
+    }
+
+    let mut stream = response.bytes_stream();
+    let mut buffer = String::new();
+    let mut full_content = String::new();
+
+    while let Some(chunk_result) = stream.next().await {
+        let chunk = chunk_result.map_err(|e| e.to_string())?;
+        buffer.push_str(&String::from_utf8_lossy(&chunk));
+
+        // Process complete SSE lines (data: {...}\n\n)
+        while let Some(line_end) = buffer.find("\n\n") {
+            let line = buffer[..line_end].to_string();
+            buffer = buffer[line_end + 2..].to_string();
+
+            // Skip empty lines
+            if line.trim().is_empty() {
+                continue;
+            }
+
+            if line.starts_with("data: ") {
+                let data_str = &line[6..];
+
+                if let Ok(data) = serde_json::from_str::<serde_json::Value>(data_str) {
+                    // Handle delta chunks
+                    if let Some(delta) = data.get("delta").and_then(|d| d.as_str()) {
+                        full_content.push_str(delta);
+                        let _ = app.emit("chat-chunk", ChatChunkEvent {
+                            request_id: request_id.to_string(),
+                            delta: delta.to_string(),
+                        });
+                    }
+
+                    // Handle completion
+                    if data.get("done").and_then(|d| d.as_bool()) == Some(true) {
+                        let status = data.get("status")
+                            .and_then(|s| s.as_str())
+                            .unwrap_or("success")
+                            .to_string();
+
+                        let error = data.get("error")
+                            .and_then(|e| e.as_str())
+                            .map(|s| s.to_string());
+
+                        let message = if status == "success" {
+                            Some(ChatMessage {
+                                id: data.get("message")
+                                    .and_then(|m| m.get("id"))
+                                    .and_then(|i| i.as_str())
+                                    .map(|s| s.to_string()),
+                                role: "assistant".to_string(),
+                                content: full_content.clone(),
+                                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                            })
+                        } else {
+                            None
+                        };
+
+                        println!("✅ Chat stream complete, status: {}", status);
+                        let _ = app.emit("chat-complete", ChatCompleteEvent {
+                            request_id: request_id.to_string(),
+                            message,
+                            status,
+                            error,
+                        });
+                        return Ok(());
+                    }
                 }
             }
         }
     }
-    
-    Ok(serde_json::json!({
-        "is_running": containers_running,
-        "is_healthy": ai_service_healthy && qdrant_healthy,
-        "services": {
-            "qdrant": {
-                "running": containers_running,
-                "healthy": qdrant_healthy,
-                "endpoint": "http://localhost:6333"
-            },
-            "ai_service": {
-                "running": containers_running,
-                "healthy": ai_service_healthy,
-                "endpoint": "http://localhost:8000"
-            }
-        }
-    }))
+
+    // If we exit the loop without a done message, emit completion with what we have
+    println!("⚠️ Stream ended without explicit done message");
+    let _ = app.emit("chat-complete", ChatCompleteEvent {
+        request_id: request_id.to_string(),
+        message: Some(ChatMessage {
+            id: Some(uuid::Uuid::new_v4().to_string()),
+            role: "assistant".to_string(),
+            content: full_content,
+            timestamp: Some(chrono::Utc::now().to_rfc3339()),
+        }),
+        status: "success".to_string(),
+        error: None,
+    });
+
+    Ok(())
 }
 
 // fn get_absolute_path_migration(path: &str) -> PathBuf {
@@ -260,8 +392,10 @@ async fn python_service_status() -> Result<serde_json::Value, String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Load .env file if present
+    dotenv().ok();
 
-    // Embed the migration SQL at compile-time so it’s always available, even on mobile
+    // Embed the migration SQL at compile-time so it's always available, even on mobile
     // where the external file isn’t packaged inside the APK.
     const INITIAL_SCHEMA_SQL: &str = include_str!("../../data/migrations/001_initial_schema.sql");
     const REQUIREMENT_CLARITY_SQL: &str = include_str!("../../data/migrations/002_add_requirement_clarity.sql");
@@ -324,7 +458,7 @@ pub fn run() {
             
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![echo, run_code, get_current_dir, start_python_service, stop_python_service, python_service_status, startup_ai_service])
+        .invoke_handler(tauri::generate_handler![echo, run_code, get_current_dir, get_ai_service_config, python_service_status, startup_ai_service, start_chat_stream])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

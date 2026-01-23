@@ -37,20 +37,14 @@ export interface AppSettings {
     sidebarWidth: number;
     showPreviewPanel: boolean;
   };
-
-  // Sync Settings
-  sync: {
-    azureEnabled: boolean;
-    syncInterval: number; // minutes
-  };
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
   ai: {
     enabled: true,
     provider: 'local',
-    serviceUrl: 'http://localhost:8000',
-    model: 'llama31-8b-instruct-q4k-4k',
+    serviceUrl: '',  // Initialized from Tauri backend config
+    model: 'llama3.2:3b',
     openaiApiKey: '',
     openaiModel: 'gpt-4o-mini',
     anthropicApiKey: '',
@@ -75,10 +69,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
     sidebarWidth: 250,
     showPreviewPanel: true,
   },
-  sync: {
-    azureEnabled: false,
-    syncInterval: 5,
-  },
 };
 
 export const ACCENT_COLORS = [
@@ -91,10 +81,14 @@ export const ACCENT_COLORS = [
 ];
 
 export const LOCAL_AI_MODELS = [
-  { id: 'llama31-8b-instruct-q4k-4k', name: 'Llama 3.1 8B (Fast)' },
-  { id: 'llama31-70b-instruct', name: 'Llama 3.1 70B (Quality)' },
-  { id: 'mistral-7b-instruct', name: 'Mistral 7B' },
-  { id: 'codellama-13b', name: 'CodeLlama 13B' },
+  // 4GB VRAM compatible (recommended)
+  { id: 'llama3.2:3b', name: 'Llama 3.2 3B (Recommended for 4GB VRAM)' },
+  { id: 'phi3:mini', name: 'Phi-3 Mini (Fast, 4GB VRAM)' },
+  { id: 'gemma2:2b', name: 'Gemma 2 2B (Compact)' },
+  { id: 'qwen2.5:3b', name: 'Qwen 2.5 3B (Good quality)' },
+  // Larger models (8GB+ VRAM)
+  { id: 'llama3.1:8b', name: 'Llama 3.1 8B (8GB+ VRAM)' },
+  { id: 'mistral:7b-instruct', name: 'Mistral 7B (8GB+ VRAM)' },
 ];
 
 export const OPENAI_MODELS = [

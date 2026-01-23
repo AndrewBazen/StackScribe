@@ -1,18 +1,13 @@
 import { ChatMessage, ChatContext, ChatRequest, ChatResponse, StreamingChunk } from '../types/chat';
+import { settingsService } from './settingsService';
 
 class AIChatService {
-  private localUrl: string = 'http://localhost:8000';
-  private azureUrl: string = 'https://stackscribe-ai-service-prod.azurecontainerapps.io';
-  private enableAzure: boolean = false;
-
-  constructor() {
-    this.initializeServiceUrl();
-  }
-
-  private initializeServiceUrl() {
-    const enableAzureSync = localStorage.getItem('enableAzureSync');
-    this.enableAzure = enableAzureSync ? JSON.parse(enableAzureSync) : false;
-    console.log('AI Chat Service config:', { enableAzure: this.enableAzure, localUrl: this.localUrl });
+  private getServiceUrl(): string {
+    const aiSettings = settingsService.getAISettings();
+    if (!aiSettings.serviceUrl) {
+      throw new Error('AI service not configured. Set the service URL in Preferences > AI.');
+    }
+    return aiSettings.serviceUrl;
   }
 
   private async postJson(url: string, body: unknown): Promise<Response> {
@@ -23,33 +18,6 @@ class AIChatService {
       },
       body: JSON.stringify(body)
     });
-  }
-
-  private async tryWithFallback(endpoint: string, request: ChatRequest): Promise<Response> {
-    try {
-      const response = await this.postJson(`${this.localUrl}${endpoint}`, request);
-
-      if (response.ok) {
-        return response;
-      }
-
-      if (this.enableAzure) {
-        console.warn('Local AI service returned error, trying Azure:', response.status, response.statusText);
-        const azureResponse = await this.postJson(`${this.azureUrl}${endpoint}`, request);
-        if (azureResponse.ok) return azureResponse;
-        throw new Error(`Azure error: HTTP ${azureResponse.status}: ${azureResponse.statusText}`);
-      }
-
-      throw new Error(`Local service error: HTTP ${response.status}: ${response.statusText}`);
-    } catch (error) {
-      if (this.enableAzure) {
-        console.warn('Local AI service request failed, trying Azure:', error);
-        const azureResponse = await this.postJson(`${this.azureUrl}${endpoint}`, request);
-        if (azureResponse.ok) return azureResponse;
-        throw new Error(`Azure error: HTTP ${azureResponse.status}: ${azureResponse.statusText}`);
-      }
-      throw error;
-    }
   }
 
   /**
@@ -63,7 +31,13 @@ class AIChatService {
     };
 
     try {
-      const response = await this.tryWithFallback('/api/chat', request);
+      const serviceUrl = this.getServiceUrl();
+      const response = await this.postJson(`${serviceUrl}/api/chat`, request);
+
+      if (!response.ok) {
+        throw new Error(`AI service error: HTTP ${response.status}: ${response.statusText}`);
+      }
+
       const data: ChatResponse = await response.json();
       return data;
     } catch (error) {
@@ -87,7 +61,8 @@ class AIChatService {
    */
   async *streamMessage(
     messages: ChatMessage[],
-    context: ChatContext
+    context: ChatContext,
+    signal?: AbortSignal
   ): AsyncGenerator<StreamingChunk, void, unknown> {
     const request: ChatRequest = {
       messages,
@@ -96,12 +71,14 @@ class AIChatService {
     };
 
     try {
-      const response = await fetch(`${this.localUrl}/api/chat/stream`, {
+      const serviceUrl = this.getServiceUrl();
+      const response = await fetch(`${serviceUrl}/api/chat/stream`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(request)
+        body: JSON.stringify(request),
+        signal
       });
 
       if (!response.ok) {
@@ -115,6 +92,7 @@ class AIChatService {
 
       const decoder = new TextDecoder();
       let buffer = '';
+      let receivedCompletion = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -130,11 +108,16 @@ class AIChatService {
         buffer = lines.pop() || ''; // Keep incomplete line in buffer
 
         for (const line of lines) {
+          console.log('📡 SSE line:', line);
           if (line.startsWith('data: ')) {
             const dataStr = line.slice(6).trim();
             if (dataStr) {
               try {
                 const chunk: StreamingChunk = JSON.parse(dataStr);
+                console.log('✅ Parsed chunk:', chunk);
+                if (chunk.done) {
+                  receivedCompletion = true;
+                }
                 yield chunk;
               } catch (e) {
                 console.warn('Failed to parse SSE chunk:', dataStr, e);
@@ -142,6 +125,16 @@ class AIChatService {
             }
           }
         }
+      }
+
+      // If stream closed without a completion chunk, yield one to prevent stuck UI
+      if (!receivedCompletion) {
+        console.warn('Stream ended without completion chunk, yielding fallback');
+        yield {
+          done: true,
+          status: 'error',
+          error: 'Stream ended unexpectedly'
+        };
       }
     } catch (error) {
       console.error('Stream error:', error);
@@ -158,7 +151,8 @@ class AIChatService {
    */
   async healthCheck(): Promise<boolean> {
     try {
-      const response = await fetch(`${this.localUrl}/health`);
+      const serviceUrl = this.getServiceUrl();
+      const response = await fetch(`${serviceUrl}/health`);
       if (!response.ok) {
         return false;
       }

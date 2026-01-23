@@ -1,4 +1,5 @@
 import { Entry } from '../types/entry';
+import { settingsService } from './settingsService';
 
 export interface LinkSuggestion {
   targetEntryId: string;
@@ -54,20 +55,12 @@ interface PythonIndexRequest {
 }
 
 class AILinkService {
-  private localUrl: string = 'http://localhost:8000';
-  private azureUrl: string = 'https://stackscribe-ai-service-prod.azurecontainerapps.io';
-  private enableAzure: boolean = false;
-
-  constructor() {
-    this.initializeServiceUrl();
-  }
-
-  private initializeServiceUrl() {
-    // Check if user has Azure sync enabled (indicating they're authenticated)
-    const enableAzureSync = localStorage.getItem('enableAzureSync');
-    this.enableAzure = enableAzureSync ? JSON.parse(enableAzureSync) : false;
-    // Prefer local when it's available; we only fall back to Azure if enabled and local isn't reachable.
-    console.log('AI Service config:', { enableAzure: this.enableAzure, localUrl: this.localUrl, azureUrl: this.azureUrl });
+  private getServiceUrl(): string {
+    const aiSettings = settingsService.getAISettings();
+    if (!aiSettings.serviceUrl) {
+      throw new Error('AI service not configured. Set the service URL in Preferences > AI.');
+    }
+    return aiSettings.serviceUrl;
   }
 
   private async postJson(url: string, body: unknown): Promise<Response> {
@@ -80,39 +73,9 @@ class AILinkService {
     });
   }
 
-  private async tryWithFallback(pythonRequest: PythonSuggestionRequest): Promise<Response> {
-    try {
-      // Try local service first (best UX for desktop/local-ai).
-      const response = await this.postJson(`${this.localUrl}/api/suggestions`, pythonRequest);
-
-      if (response.ok) {
-        return response;
-      }
-
-      // If local fails and Azure is enabled, try Azure.
-      if (this.enableAzure) {
-        console.warn('Local AI service returned error, trying Azure:', response.status, response.statusText);
-        const azureResponse = await this.postJson(`${this.azureUrl}/api/suggestions`, pythonRequest);
-        if (azureResponse.ok) return azureResponse;
-        throw new Error(`Azure error: HTTP ${azureResponse.status}: ${azureResponse.statusText}`);
-      }
-
-      throw new Error(`Local service error: HTTP ${response.status}: ${response.statusText}`);
-    } catch (error) {
-      // If local call threw and Azure is enabled, attempt Azure.
-      if (this.enableAzure) {
-        console.warn('Local AI service request failed, trying Azure:', error);
-        const azureResponse = await this.postJson(`${this.azureUrl}/api/suggestions`, pythonRequest);
-        if (azureResponse.ok) return azureResponse;
-        throw new Error(`Azure error: HTTP ${azureResponse.status}: ${azureResponse.statusText}`);
-      }
-      throw error;
-    }
-  }
-
   async getSuggestions(request: AILinkRequest): Promise<AILinkResponse> {
     const startTime = Date.now();
-    
+
     try {
       // Extract text content from current entry
       const text = request.currentEntry.content || '';
@@ -123,10 +86,15 @@ class AILinkService {
         current_entry_id: request.currentEntry.id
       };
 
-      // Try primary service first, then fallback
-      const response = await this.tryWithFallback(pythonRequest);
+      const serviceUrl = this.getServiceUrl();
+      const response = await this.postJson(`${serviceUrl}/api/suggestions`, pythonRequest);
+
+      if (!response.ok) {
+        throw new Error(`AI service error: HTTP ${response.status}: ${response.statusText}`);
+      }
+
       const pythonSuggestions: PythonSuggestion[] = await response.json();
-      
+
       // Map the model's raw score to a stable 0..1 confidence so the UI can use percentages.
       // NOTE: The reranker produces unbounded scores; sigmoid makes it human-friendly.
       const scoreToConfidence = (score: number) => {
@@ -176,7 +144,8 @@ class AILinkService {
         })),
       };
 
-      const response = await this.postJson(`${this.localUrl}/api/index_entries`, payload);
+      const serviceUrl = this.getServiceUrl();
+      const response = await this.postJson(`${serviceUrl}/api/index_entries`, payload);
       return response.ok;
     } catch (error) {
       console.warn('Failed to index entries (local AI service):', error);
@@ -186,11 +155,12 @@ class AILinkService {
 
   async healthCheck(): Promise<boolean> {
     try {
-      const response = await fetch(`${this.localUrl}/health`);
+      const serviceUrl = this.getServiceUrl();
+      const response = await fetch(`${serviceUrl}/health`);
       if (!response.ok) {
         return false;
       }
-      
+
       const data = await response.json();
       return data.status === 'healthy';
     } catch {
@@ -199,4 +169,4 @@ class AILinkService {
   }
 }
 
-export const aiLinkService = new AILinkService(); 
+export const aiLinkService = new AILinkService();

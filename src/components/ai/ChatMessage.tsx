@@ -66,16 +66,22 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
     );
   };
 
+  // Debug: log when component renders
+  console.log(`🎨 ChatMessage render: role=${message.role}, contentLen=${message.content.length}`);
+
   return (
     <div className={`chat-message ${isUser ? 'user' : 'assistant'}`}>
       <div className="message-header">
         <span className="message-role">{isUser ? 'You' : 'AI'}</span>
         <span className="message-time">{formatTime(message.timestamp)}</span>
+        {isAssistant && <span className="debug-len" style={{marginLeft: '8px', fontSize: '10px', color: '#888'}}>({message.content.length} chars)</span>}
       </div>
 
       <div className="message-content">
         {isUser ? (
           <p>{message.content}</p>
+        ) : message.content.length === 0 ? (
+          <p className="streaming-placeholder">...</p>
         ) : (
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}

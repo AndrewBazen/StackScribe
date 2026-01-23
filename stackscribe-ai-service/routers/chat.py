@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from settings import REQ_LLM_BASE_URL, REQ_LLM_API_KEY, REQ_LLM_MODEL, REQ_LLM_TEMPERATURE, REQ_LLM_MAX_TOKENS
 from deps import get_http_client
+import asyncio
 import httpx
 import json
 import uuid
@@ -234,7 +235,7 @@ async def chat_stream(req: ChatRequest):
                     json=payload,
                 ) as response:
                     if response.status_code >= 400:
-                        error_data = {"error": f"LLM error: HTTP {response.status_code}"}
+                        error_data = {"error": f"LLM error: HTTP {response.status_code}", "done": True, "status": "error"}
                         yield f"data: {json.dumps(error_data)}\n\n"
                         return
 
@@ -254,6 +255,7 @@ async def chat_stream(req: ChatRequest):
                                     if content:
                                         full_content += content
                                         yield f"data: {json.dumps({'delta': content, 'done': False})}\n\n"
+                                        await asyncio.sleep(0)  # Force event loop yield for SSE flush
                                 except json.JSONDecodeError:
                                     continue
 

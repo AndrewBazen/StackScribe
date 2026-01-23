@@ -578,3 +578,14 @@
 .chat-messages::-webkit-scrollbar-thumb:hover {
   background: var(--color-bg-active);
 }
+
+/* Streaming message styles */
+.chat-message.streaming .message-content {
+  opacity: 0.9;
+}
+
+.streaming-indicator {
+  font-size: var(--font-size-xs);
+  color: var(--color-accent-primary);
+  animation: pulse 1.4s infinite ease-in-out;
+}

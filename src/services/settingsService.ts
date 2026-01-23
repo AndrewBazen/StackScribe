@@ -1,13 +1,47 @@
 import { AppSettings, DEFAULT_SETTINGS } from '../types/settings';
+import { invoke } from '@tauri-apps/api/core';
 
 const SETTINGS_KEY = 'stackscribe_settings';
+
+interface TauriAIConfig {
+  ai_service_url: string | null;
+  qdrant_url: string | null;
+  configured: boolean;
+}
 
 class SettingsService {
   private settings: AppSettings;
   private listeners: Set<(settings: AppSettings) => void> = new Set();
+  private initialized: boolean = false;
 
   constructor() {
     this.settings = this.loadSettings();
+  }
+
+  /**
+   * Initialize settings from Tauri backend config.
+   * Should be called once during app startup.
+   */
+  async initializeFromTauri(): Promise<void> {
+    if (this.initialized) return;
+
+    try {
+      const config = await invoke<TauriAIConfig>('get_ai_service_config');
+      console.log('Tauri AI config:', config);
+
+      // Only set serviceUrl from Tauri if user hasn't manually configured one
+      if (config.ai_service_url && !this.settings.ai.serviceUrl) {
+        this.settings.ai.serviceUrl = config.ai_service_url;
+        this.saveSettings();
+        this.notifyListeners();
+        console.log('AI service URL set from environment:', config.ai_service_url);
+      }
+
+      this.initialized = true;
+    } catch (error) {
+      console.warn('Failed to get AI config from Tauri:', error);
+      this.initialized = true;
+    }
   }
 
   private loadSettings(): AppSettings {
@@ -29,7 +63,6 @@ class SettingsService {
       ai: { ...DEFAULT_SETTINGS.ai, ...stored.ai },
       editor: { ...DEFAULT_SETTINGS.editor, ...stored.editor },
       appearance: { ...DEFAULT_SETTINGS.appearance, ...stored.appearance },
-      sync: { ...DEFAULT_SETTINGS.sync, ...stored.sync },
     };
   }
 
@@ -49,17 +82,12 @@ class SettingsService {
     return { ...this.settings.appearance };
   }
 
-  getSyncSettings() {
-    return { ...this.settings.sync };
-  }
-
   updateSettings(updates: Partial<AppSettings>): void {
     this.settings = {
       ...this.settings,
       ai: updates.ai ? { ...this.settings.ai, ...updates.ai } : this.settings.ai,
       editor: updates.editor ? { ...this.settings.editor, ...updates.editor } : this.settings.editor,
       appearance: updates.appearance ? { ...this.settings.appearance, ...updates.appearance } : this.settings.appearance,
-      sync: updates.sync ? { ...this.settings.sync, ...updates.sync } : this.settings.sync,
     };
     this.saveSettings();
     this.notifyListeners();
@@ -79,12 +107,6 @@ class SettingsService {
 
   updateAppearanceSettings(updates: Partial<AppSettings['appearance']>): void {
     this.settings.appearance = { ...this.settings.appearance, ...updates };
-    this.saveSettings();
-    this.notifyListeners();
-  }
-
-  updateSyncSettings(updates: Partial<AppSettings['sync']>): void {
-    this.settings.sync = { ...this.settings.sync, ...updates };
     this.saveSettings();
     this.notifyListeners();
   }
@@ -132,7 +154,6 @@ export function useSettings() {
     updateAISettings: settingsService.updateAISettings.bind(settingsService),
     updateEditorSettings: settingsService.updateEditorSettings.bind(settingsService),
     updateAppearanceSettings: settingsService.updateAppearanceSettings.bind(settingsService),
-    updateSyncSettings: settingsService.updateSyncSettings.bind(settingsService),
     resetToDefaults: settingsService.resetToDefaults.bind(settingsService),
   };
 }

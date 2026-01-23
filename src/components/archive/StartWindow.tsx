@@ -2,22 +2,21 @@ import { Archive } from "../../types/archive";
 import ArchiveSelect from "./ArchiveSelect";
 import * as Dialog from "@radix-ui/react-dialog";
 import logo from "../../../src-tauri/icons/icon.png";
-import { SyncStatus } from "../../lib/sync";
 import LoadingOverlay from "../ui/LoadingOverlay";
 
 export default function StartWindow(props: {
     archives: Archive[];
     onArchiveClick: (archive: Archive) => void;
     onCreateArchive: (archive: Archive, tomeName: string) => void;
-    syncStatus: SyncStatus;
+    isReady: boolean;
     isOpen: boolean;
     onOpenChange: (open: boolean) => void;
 }) {
-    const { archives, onArchiveClick, onCreateArchive, syncStatus, isOpen, onOpenChange } = props;
+    const { archives, onArchiveClick, onCreateArchive, isReady, isOpen, onOpenChange } = props;
 
     const handleArchiveClick = (archive: Archive) => {
-        if (!syncStatus.isReady) {
-            console.warn('⚠️ Cannot open archive while sync is in progress');
+        if (!isReady) {
+            console.warn('⚠️ Cannot open archive while app is initializing');
             return;
         }
         onArchiveClick(archive);
@@ -25,33 +24,17 @@ export default function StartWindow(props: {
     };
 
     const handleCreateArchive = (archive: Archive, tomeName: string) => {
-        if (!syncStatus.isReady) {
-            console.warn('⚠️ Cannot create archive while sync is in progress');
+        if (!isReady) {
+            console.warn('⚠️ Cannot create archive while app is initializing');
             return;
         }
         onCreateArchive(archive, tomeName);
         onOpenChange(false);
     };
 
-    const getSyncStatusMessage = () => {
-        if (syncStatus.isInitializing) {
-            return "Initializing and syncing data...";
-        }
-        if (syncStatus.isSyncing) {
-            return "🔄 Syncing data...";
-        }
-        if (syncStatus.error) {
-            return `⚠️ Sync error: ${syncStatus.error} (working offline)`;
-        }
-        if (syncStatus.isReady) {
-            return "✅ Ready";
-        }
-        return "⏳ Preparing...";
-    };
-
     // Show a full-screen loading overlay until the app is ready
-    if (!syncStatus.isReady) {
-        return <LoadingOverlay message={getSyncStatusMessage()} />;
+    if (!isReady) {
+        return <LoadingOverlay message="Initializing..." />;
     }
 
     return (
@@ -74,7 +57,7 @@ export default function StartWindow(props: {
                             archives={archives}
                             onArchiveClick={handleArchiveClick}
                             onCreateArchive={handleCreateArchive}
-                            syncStatus={syncStatus}
+                            isReady={isReady}
                         />
                     </div>
                 </Dialog.Content>

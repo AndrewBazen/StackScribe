@@ -8,15 +8,10 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "functions:start": "cd stackscribe-functions && npm start",
-    "functions:build": "cd stackscribe-functions && npm run build",
-    "functions:deploy": "cd stackscribe-functions && npm run deploy",
     "dev:android": "vite --config vite.mobile.ts",
     "build:android": "vite build --config vite.mobile.ts"
   },
   "dependencies": {
-    "@azure/msal-browser": "^4.14.0",
-    "@azure/msal-react": "^3.0.14",
     "@codemirror/lang-javascript": "^6.2.4",
     "@codemirror/lang-markdown": "^6.3.3",
     "@codemirror/language-data": "^6.5.1",

@@ -16,7 +16,6 @@ import NamePrompt from "./components/dialogs/NamePrompt";
 import ArchivePrompt from "./components/dialogs/ArchivePrompt";
 import ArchiveSelectDialog from "./components/dialogs/ArchiveSelectDialog";
 import ArchiveManageDialog from "./components/dialogs/ArchiveManageDialog";
-import { getSyncManager, SyncStatus } from "./lib/sync";
 import { getDb } from "./lib/db";
 import { searchEntriesInArchive } from "./stores/dataStore";
 import TabBar from "./components/layout/TabBar";
@@ -37,17 +36,13 @@ import { useEntryManagement } from "./hooks/useEntryManagement";
 import { useAISuggestions } from "./hooks/useAISuggestions";
 import { useArchiveManagement } from "./hooks/useArchiveManagement";
 import { useAIChat } from "./hooks/useAIChat";
+import { settingsService } from "./services/settingsService";
 
 const DIVIDER_SIZE = 2;
 
 function App() {
-  // Sync and initialization state
-  const [syncStatus, setSyncStatus] = useState<SyncStatus>({
-    isInitializing: false,
-    isSyncing: false,
-    isReady: false,
-    error: null
-  });
+  // Initialization state
+  const [isReady, setIsReady] = useState(false);
   const isInitialized = useRef<boolean>(false);
 
   // UI state
@@ -84,7 +79,7 @@ function App() {
 
   // Archive management hook
   const archiveManagement = useArchiveManagement({
-    syncStatus,
+    isReady,
     onArchiveOpened: () => {
       entryManagement.clearEntryState();
     },
@@ -179,6 +174,10 @@ function App() {
 
       try {
         console.log('🚀 Initializing StackScribe...');
+
+        // Initialize settings from Tauri backend (gets AI_SERVICE_URL env var)
+        await settingsService.initializeFromTauri();
+
         const db = await getDb();
         console.log("✅ Database initialization completed successfully!");
 
@@ -188,28 +187,12 @@ function App() {
         `) as Array<{ name: string }>;
         console.log('📊 Available tables:', tables);
 
-        const syncManager = getSyncManager();
-        if (syncManager) {
-          const unsubscribe = syncManager.onStatusChange(setSyncStatus);
-          await syncManager.waitForInitialization();
-          return () => unsubscribe();
-        } else {
-          setSyncStatus({
-            isInitializing: false,
-            isSyncing: false,
-            isReady: true,
-            error: null
-          });
-        }
+        setIsReady(true);
       } catch (error) {
         console.error("❌ Failed to initialize app:", error);
         isInitialized.current = false;
-        setSyncStatus({
-          isInitializing: false,
-          isSyncing: false,
-          isReady: true,
-          error: error instanceof Error ? error.message : 'Initialization failed'
-        });
+        // Still set ready even on error so user can work offline
+        setIsReady(true);
       }
     };
     initializeApp();
@@ -331,7 +314,7 @@ function App() {
         archives={archiveManagement.archives}
         onArchiveClick={archiveManagement.handleArchiveOpen}
         onCreateArchive={handleArchiveCreate}
-        syncStatus={syncStatus}
+        isReady={isReady}
         isOpen={showStartWindow}
         onOpenChange={setShowStartWindow}
       />
@@ -468,6 +451,7 @@ function App() {
                 messages={aiChat.messages}
                 status={aiChat.status}
                 error={aiChat.error}
+                streamingContent={aiChat.streamingContent}
                 onSendMessage={aiChat.sendMessage}
                 onClearHistory={aiChat.clearHistory}
                 onApplyEdit={aiChat.applyEditSuggestion}

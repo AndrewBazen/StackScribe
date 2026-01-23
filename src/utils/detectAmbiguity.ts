@@ -1,13 +1,20 @@
 import type { Chunk } from "../types/Chunk";
 import type { Finding } from "../types/finding";
+import { settingsService } from "../services/settingsService";
 
-const LOCAL_AI_BASE = import.meta.env.VITE_LOCAL_AI_BASE ?? "http://localhost:8000";
+function getAIServiceUrl(): string {
+    const aiSettings = settingsService.getAISettings();
+    if (!aiSettings.serviceUrl) {
+        throw new Error('AI service not configured. Set the service URL in Preferences > AI.');
+    }
+    return aiSettings.serviceUrl;
+}
 
 export async function detectAmbiguity(chunks: Chunk[]): Promise<Finding[]> {
   const nonEmpty = chunks.filter((c) => c.text.trim());
   if (nonEmpty.length === 0) return [];
 
-  const res = await fetch(`${LOCAL_AI_BASE}/api/detect_ambiguity`, {
+  const res = await fetch(`${getAIServiceUrl()}/api/detect_ambiguity`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

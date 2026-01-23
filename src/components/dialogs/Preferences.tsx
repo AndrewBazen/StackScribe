@@ -164,9 +164,6 @@ export default function Preferences({ onClose }: PreferencesProps) {
     }
   };
 
-  const updateSync = (updates: Partial<AppSettings['sync']>) => {
-    setSettings(prev => ({ ...prev, sync: { ...prev.sync, ...updates } }));
-  };
 
   // Handle app theme selection
   const handleAppThemeSelect = async (themeId: string) => {
@@ -347,7 +344,6 @@ export default function Preferences({ onClose }: PreferencesProps) {
             <Tabs.Trigger className="tabs-trigger" value="ai">AI</Tabs.Trigger>
             <Tabs.Trigger className="tabs-trigger" value="editor">Editor</Tabs.Trigger>
             <Tabs.Trigger className="tabs-trigger" value="appearance">Appearance</Tabs.Trigger>
-            <Tabs.Trigger className="tabs-trigger" value="sync">Sync</Tabs.Trigger>
           </Tabs.List>
 
           {/* AI Settings Tab */}
@@ -423,7 +419,7 @@ export default function Preferences({ onClose }: PreferencesProps) {
                       className="setting-input"
                       value={settings.ai.serviceUrl}
                       onChange={(e) => updateAI({ serviceUrl: e.target.value })}
-                      placeholder="http://localhost:8000"
+                      placeholder="http://192.168.1.x:8000"
                     />
                   </div>
                 </div>
@@ -1039,55 +1035,6 @@ export default function Preferences({ onClose }: PreferencesProps) {
             </div>
           </Tabs.Content>
 
-          {/* Sync Settings Tab */}
-          <Tabs.Content className="tabs-content" value="sync">
-            <div className="settings-section">
-              <div className="settings-section-title">Cloud Sync</div>
-
-              <div className="setting-row">
-                <div className="setting-info">
-                  <div className="setting-label">Enable Azure Sync</div>
-                  <div className="setting-description">Sync data with Azure cloud</div>
-                </div>
-                <div className="setting-control">
-                  <Switch.Root
-                    className="switch-root"
-                    checked={settings.sync.azureEnabled}
-                    onCheckedChange={(checked) => updateSync({ azureEnabled: checked })}
-                  >
-                    <Switch.Thumb className="switch-thumb" />
-                  </Switch.Root>
-                </div>
-              </div>
-
-              {settings.sync.azureEnabled && (
-                <div className="setting-row">
-                  <div className="setting-info">
-                    <div className="setting-label">Sync Interval</div>
-                    <div className="setting-description">How often to sync (minutes)</div>
-                  </div>
-                  <div className="setting-control">
-                    <div className="slider-container">
-                      <Slider.Root
-                        className="slider-root"
-                        value={[settings.sync.syncInterval]}
-                        onValueChange={([value]) => updateSync({ syncInterval: value })}
-                        min={1}
-                        max={30}
-                        step={1}
-                      >
-                        <Slider.Track className="slider-track">
-                          <Slider.Range className="slider-range" />
-                        </Slider.Track>
-                        <Slider.Thumb className="slider-thumb" />
-                      </Slider.Root>
-                      <span className="slider-value">{settings.sync.syncInterval}m</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </Tabs.Content>
         </Tabs.Root>
 
         <div className="preferences-footer">

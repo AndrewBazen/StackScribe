@@ -3,120 +3,95 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import '../../styles/AIServiceManager.css';
 
+interface ServiceInfo {
+  running: boolean;
+  healthy: boolean;
+  endpoint: string | null;
+}
+
 interface ServiceStatus {
   is_running: boolean;
   is_healthy: boolean;
-  endpoint: string;
+  error?: string;
+  services: {
+    qdrant: ServiceInfo;
+    ai_service: ServiceInfo;
+  };
 }
 
-interface ServiceResponse {
-  status: string;
-  message: string;
+interface AIServiceConfig {
+  ai_service_url: string | null;
+  qdrant_url: string | null;
+  configured: boolean;
 }
 
 const AIServiceManager: React.FC = () => {
   const [status, setStatus] = useState<ServiceStatus>({
     is_running: false,
     is_healthy: false,
-    endpoint: 'http://localhost:8000'
+    services: {
+      qdrant: { running: false, healthy: false, endpoint: null },
+      ai_service: { running: false, healthy: false, endpoint: null }
+    }
   });
+  const [config, setConfig] = useState<AIServiceConfig | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [startupStatus, setStartupStatus] = useState<string>('');
-  
-  // Check if user has Azure sync enabled
-  const isAzureEnabled = () => {
-    const enableAzureSync = localStorage.getItem('enableAzureSync');
-    return enableAzureSync ? JSON.parse(enableAzureSync) : false;
-  };
-
-  const getServiceEndpoint = () => {
-    return isAzureEnabled() ? 
-      'https://stackscribe-ai-service-prod.azurecontainerapps.io' : 
-      'http://localhost:8000';
-  };
 
   const checkStatus = async () => {
     try {
-      if (isAzureEnabled()) {
-        // For Azure service, check health directly
-        const endpoint = getServiceEndpoint();
-        const response = await fetch(`${endpoint}/health`);
-        const isHealthy = response.ok;
-        setStatus({
-          is_running: isHealthy,
-          is_healthy: isHealthy,
-          endpoint: endpoint
-        });
-      } else {
-        // For local service, use the Tauri command
-        const response = await invoke<ServiceStatus>('python_service_status');
-        setStatus(response);
-      }
+      const response = await invoke<ServiceStatus>('python_service_status');
+      setStatus(response);
     } catch (error) {
       console.error('Error checking service status:', error);
       setStatus({
         is_running: false,
         is_healthy: false,
-        endpoint: getServiceEndpoint()
+        error: String(error),
+        services: {
+          qdrant: { running: false, healthy: false, endpoint: null },
+          ai_service: { running: false, healthy: false, endpoint: null }
+        }
       });
     }
   };
 
-  const startService = async () => {
-    setLoading(true);
-    setMessage('Starting AI service...');
+  const loadConfig = async () => {
     try {
-      const response = await invoke<ServiceResponse>('start_python_service');
-      setMessage(response.message);
-      // Wait a bit for service to start, then check status
-      setTimeout(checkStatus, 2000);
+      const cfg = await invoke<AIServiceConfig>('get_ai_service_config');
+      setConfig(cfg);
     } catch (error) {
-      setMessage(`Error starting service: ${error}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const stopService = async () => {
-    setLoading(true);
-    setMessage('Stopping AI service...');
-    try {
-      const response = await invoke<ServiceResponse>('stop_python_service');
-      setMessage(response.message);
-      checkStatus();
-    } catch (error) {
-      setMessage(`Error stopping service: ${error}`);
-    } finally {
-      setLoading(false);
+      console.error('Error loading AI service config:', error);
     }
   };
 
   useEffect(() => {
+    loadConfig();
     checkStatus();
-    const interval = setInterval(checkStatus, 5000); // Check every 5 seconds
+    const interval = setInterval(checkStatus, 10000); // Check every 10 seconds
 
     // Listen for startup events
     const setupEventListener = async () => {
       const unlisten = await listen('ai-service-startup', (event: any) => {
         const startupResult = event.payload;
         console.log('AI service startup event:', startupResult);
-        
-        if (startupResult.status === 'success') {
-          setStartupStatus('AI service started automatically on app launch');
-          setMessage('AI service containers are starting up...');
-          // Check status more frequently during startup
-          const startupInterval = setInterval(checkStatus, 2000);
-          setTimeout(() => clearInterval(startupInterval), 30000); // Stop after 30s
-        } else if (startupResult.status === 'error') {
-          setStartupStatus(`Startup failed: ${startupResult.message}`);
+
+        if (startupResult.status === 'connected') {
+          setStartupStatus(`Connected to AI service at ${startupResult.endpoint}`);
+          setMessage('');
+        } else if (startupResult.status === 'not_configured') {
+          setStartupStatus('AI service not configured');
           setMessage(startupResult.message);
-        } else if (startupResult.status === 'skipped') {
-          setStartupStatus('Auto-start skipped: Docker not available');
+        } else if (startupResult.status === 'unreachable') {
+          setStartupStatus('Cannot reach AI service');
+          setMessage(startupResult.message);
+        } else if (startupResult.status === 'unhealthy') {
+          setStartupStatus('AI service is unhealthy');
           setMessage(startupResult.message);
         }
       });
-      
+
       return unlisten;
     };
 
@@ -129,15 +104,17 @@ const AIServiceManager: React.FC = () => {
   }, []);
 
   const getStatusIcon = () => {
+    if (!config?.configured) return '⚙️';
     if (status.is_healthy) return '🟢';
     if (status.is_running) return '🟡';
     return '🔴';
   };
 
   const getStatusText = () => {
-    if (status.is_healthy) return 'Healthy';
-    if (status.is_running) return 'Starting...';
-    return 'Stopped';
+    if (!config?.configured) return 'Not Configured';
+    if (status.is_healthy) return 'Connected';
+    if (status.is_running) return 'Connecting...';
+    return 'Disconnected';
   };
 
   return (
@@ -149,114 +126,81 @@ const AIServiceManager: React.FC = () => {
           <span className="status-text">{getStatusText()}</span>
         </div>
       </div>
-      
+
       <div className="service-info">
         <div className="info-item">
-          <span className="label">Endpoint:</span>
-          <span className="value">{status.endpoint}</span>
+          <span className="label">AI Service:</span>
+          <span className="value">
+            {status.services.ai_service.endpoint || config?.ai_service_url || 'Not configured'}
+          </span>
+        </div>
+        <div className="info-item">
+          <span className="label">Qdrant:</span>
+          <span className="value">
+            {status.services.qdrant.endpoint || config?.qdrant_url || 'Not configured'}
+          </span>
         </div>
         <div className="info-item">
           <span className="label">Features:</span>
-          <span className="value">Vector similarity, Cross-encoder reranking, NER matching</span>
-        </div>
-        <div className="info-item">
-          <span className="label">Deployment:</span>
-          <span className="value">
-            {isAzureEnabled() ? 
-              'Azure Container Apps' : 
-              'Docker Compose (Qdrant + AI Service)'
-            }
-          </span>
+          <span className="value">Vector similarity, Cross-encoder reranking, GPU acceleration</span>
         </div>
       </div>
 
       <div className="service-controls">
-        {!isAzureEnabled() && (
-          <>
-            <button 
-              className="btn btn-primary" 
-              onClick={startService}
-              disabled={loading || status.is_running}
-            >
-              {loading ? 'Starting...' : 'Start Service'}
-            </button>
-            <button 
-              className="btn btn-secondary" 
-              onClick={stopService}
-              disabled={loading || !status.is_running}
-            >
-              {loading ? 'Stopping...' : 'Stop Service'}
-            </button>
-          </>
-        )}
-        <button 
-          className="btn btn-outline" 
+        <button
+          className="btn btn-outline"
           onClick={checkStatus}
           disabled={loading}
         >
           Refresh Status
         </button>
-        {isAzureEnabled() && (
-          <div className="azure-service-info">
-            <p>Service managed by Azure Container Apps</p>
-            <p>Automatically scales based on demand</p>
-            <p>Use Azure Portal for advanced configuration</p>
-          </div>
-        )}
       </div>
+
+      {!config?.configured && (
+        <div className="config-warning">
+          <h4>⚠️ Configuration Required</h4>
+          <p>Set the <code>AI_SERVICE_URL</code> environment variable to connect to your AI server.</p>
+          <p>Example: <code>AI_SERVICE_URL=http://192.168.1.197:8000</code></p>
+        </div>
+      )}
 
       {startupStatus && (
         <div className="startup-status">
-          <h4>Startup Status:</h4>
-          <div className={`message ${startupStatus.includes('failed') || startupStatus.includes('skipped') ? 'error' : 'info'}`}>
+          <div className={`message ${startupStatus.includes('Cannot') || startupStatus.includes('not configured') ? 'error' : 'info'}`}>
             {startupStatus}
           </div>
         </div>
       )}
 
       {message && (
-        <div className={`message ${message.includes('Error') || message.includes('failed') ? 'error' : 'info'}`}>
+        <div className={`message ${message.includes('Error') || message.includes('Cannot') ? 'error' : 'info'}`}>
           {message}
         </div>
       )}
 
+      {status.error && (
+        <div className="message error">
+          {status.error}
+        </div>
+      )}
+
       <div className="service-requirements">
-        {isAzureEnabled() ? (
-          <>
-            <h4>Azure Configuration:</h4>
-            <ul>
-              <li>Service hosted on Azure Container Apps</li>
-              <li>Automatic scaling based on demand</li>
-              <li>Persistent vector database with Azure Storage</li>
-              <li>HTTPS endpoint with SSL certificates</li>
-              <li>Automatic fallback to local service if Azure is unavailable</li>
-            </ul>
-            <h4>Services:</h4>
-            <ul>
-              <li><strong>Qdrant:</strong> Vector database (Azure internal)</li>
-              <li><strong>AI Service:</strong> Link suggestions API ({status.endpoint})</li>
-            </ul>
-          </>
-        ) : (
-          <>
-            <h4>Requirements:</h4>
-            <ul>
-              <li>Docker & Docker Compose installed</li>
-              <li>Sufficient disk space for AI models (~2-3GB)</li>
-              <li>Available ports: 6333 (Qdrant), 8000 (AI Service)</li>
-              <li>Internet connection for initial model download</li>
-            </ul>
-            <h4>Services:</h4>
-            <ul>
-              <li><strong>Qdrant:</strong> Vector database (localhost:6333)</li>
-              <li><strong>AI Service:</strong> Link suggestions API (localhost:8000)</li>
-            </ul>
-            <p><em>Tip: Enable Azure Sync in preferences to use cloud AI service</em></p>
-          </>
-        )}
+        <h4>Server Configuration:</h4>
+        <ul>
+          <li>AI service runs on a remote server</li>
+          <li>Set <code>AI_SERVICE_URL</code> environment variable</li>
+          <li>Optionally set <code>QDRANT_URL</code> (auto-derived if not set)</li>
+        </ul>
+        <h4>Services:</h4>
+        <ul>
+          <li><strong>Qdrant:</strong> Vector database {status.services.qdrant.healthy ? '✅' : '❌'}</li>
+          <li><strong>AI Service:</strong> Link suggestions API {status.services.ai_service.healthy ? '✅' : '❌'}</li>
+          <li><strong>Ollama:</strong> LLM inference (CPU)</li>
+          <li><strong>Redis:</strong> Caching layer</li>
+        </ul>
       </div>
     </div>
   );
 };
 
-export default AIServiceManager; 
+export default AIServiceManager;

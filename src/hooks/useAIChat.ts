@@ -1,14 +1,16 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { Entry } from "../types/entry";
 import { Tome } from "../types/tome";
 import { Archive } from "../types/archive";
 import { ChatMessage, ChatStatus, ChatContext, EditSuggestion } from "../types/chat";
-import { aiChatService } from "../services/aiChatService";
 
 interface AIChatState {
   messages: ChatMessage[];
   status: ChatStatus;
   error: string | null;
+  streamingContent: string;
 }
 
 interface AIChatActions {
@@ -36,9 +38,13 @@ export function useAIChat(
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [status, setStatus] = useState<ChatStatus>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [streamingContent, setStreamingContent] = useState<string>("");
 
   const lastUserMessageRef = useRef<string>("");
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const streamingContentRef = useRef<string>("");
+  const rafIdRef = useRef<number | null>(null);
+  const activeRequestIdRef = useRef<string | null>(null);
+  const unlistenersRef = useRef<UnlistenFn[]>([]);
 
   const buildContext = useCallback((): ChatContext => {
     return {
@@ -50,14 +56,28 @@ export function useAIChat(
     };
   }, [markdown, entry, tome, archive]);
 
+  // Cleanup function for event listeners
+  const cleanupListeners = useCallback(() => {
+    unlistenersRef.current.forEach(fn => fn());
+    unlistenersRef.current = [];
+    if (rafIdRef.current !== null) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      cleanupListeners();
+    };
+  }, [cleanupListeners]);
+
   const sendMessage = useCallback(async (content: string) => {
     if (!content.trim()) return;
 
-    // Cancel any ongoing request
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    abortControllerRef.current = new AbortController();
+    // Cleanup any previous request
+    cleanupListeners();
 
     lastUserMessageRef.current = content;
     setError(null);
@@ -78,23 +98,85 @@ export function useAIChat(
       const allMessages = [...messages, userMessage];
 
       setStatus("generating");
+      setStreamingContent("");
+      streamingContentRef.current = "";
 
-      // Use non-streaming for now (simpler)
-      const response = await aiChatService.sendMessage(allMessages, context);
+      console.log("🔄 Starting chat stream via Tauri...");
 
-      if (response.status === "success") {
-        setMessages(prev => [...prev, response.message]);
-        setStatus("idle");
-      } else {
-        setError(response.error || "Unknown error");
-        setStatus("error");
-      }
+      // Start the stream and get request ID
+      const requestId = await invoke<string>('start_chat_stream', {
+        messages: allMessages.map(m => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          timestamp: m.timestamp,
+        })),
+        context,
+      });
+
+      activeRequestIdRef.current = requestId;
+      console.log("📡 Got request ID:", requestId);
+
+      // Listen for chunk events
+      const unlistenChunk = await listen<{ request_id: string; delta: string }>(
+        'chat-chunk',
+        (event) => {
+          if (event.payload.request_id === activeRequestIdRef.current) {
+            streamingContentRef.current += event.payload.delta;
+
+            // Throttle UI updates to animation frames
+            if (rafIdRef.current === null) {
+              rafIdRef.current = requestAnimationFrame(() => {
+                setStreamingContent(streamingContentRef.current);
+                rafIdRef.current = null;
+              });
+            }
+          }
+        }
+      );
+      unlistenersRef.current.push(unlistenChunk);
+
+      // Listen for completion event
+      const unlistenComplete = await listen<{
+        request_id: string;
+        message: ChatMessage | null;
+        status: string;
+        error: string | null;
+      }>('chat-complete', (event) => {
+        if (event.payload.request_id === activeRequestIdRef.current) {
+          console.log("✅ Chat complete:", event.payload.status);
+
+          // Cancel any pending animation frame
+          if (rafIdRef.current !== null) {
+            cancelAnimationFrame(rafIdRef.current);
+            rafIdRef.current = null;
+          }
+
+          // Cleanup listeners
+          cleanupListeners();
+          activeRequestIdRef.current = null;
+
+          if (event.payload.status === "error") {
+            setError(event.payload.error || "Unknown error");
+            setStreamingContent("");
+            setStatus("error");
+          } else if (event.payload.message) {
+            setMessages(prev => [...prev, event.payload.message!]);
+            setStreamingContent("");
+            setStatus("idle");
+          }
+        }
+      });
+      unlistenersRef.current.push(unlistenComplete);
+
     } catch (err) {
+      cleanupListeners();
       const errorMessage = err instanceof Error ? err.message : "Unknown error";
+      setStreamingContent("");
       setError(errorMessage);
       setStatus("error");
     }
-  }, [messages, buildContext]);
+  }, [messages, buildContext, cleanupListeners]);
 
   const clearHistory = useCallback(() => {
     setMessages([]);
@@ -189,6 +271,7 @@ export function useAIChat(
     messages,
     status,
     error,
+    streamingContent,
     sendMessage,
     clearHistory,
     applyEditSuggestion,
