@@ -8,7 +8,11 @@ import { Tome } from "./types/tome";
 import StartWindow from "./components/archive/StartWindow";
 import { Archive } from "./types/archive";
 import { FilePlusIcon, GearIcon } from "@radix-ui/react-icons";
-import { chunkMarkdown, persistClarityFindings, createDecorationExtension } from "./utils/aiUtils";
+import {
+  chunkMarkdown,
+  persistClarityFindings,
+  createDecorationExtension,
+} from "./utils/aiUtils";
 import CustomHeaderBar from "./components/layout/CustomHeaderBar";
 import { exitApp, SaveShortcut } from "./utils/appUtils";
 import PreviewPanel from "./components/ui/PreviewPanel";
@@ -36,7 +40,8 @@ import { useEntryManagement } from "./hooks/useEntryManagement";
 import { useAISuggestions } from "./hooks/useAISuggestions";
 import { useArchiveManagement } from "./hooks/useArchiveManagement";
 import { useAIChat } from "./hooks/useAIChat";
-import { settingsService } from "./services/settingsService";
+import { settingsService, useSettings } from "./services/settingsService";
+import { LOCAL_AI_MODELS } from "./types/settings";
 
 const DIVIDER_SIZE = 2;
 
@@ -57,6 +62,10 @@ function App() {
 
   // Editor view reference for AI chat integration
   const editorViewRef = useRef<EditorView | null>(null);
+
+  // Settings and chat model state
+  const { settings, updateAISettings } = useSettings();
+  const [chatModel, setChatModel] = useState<string>(settings.ai.model);
 
   const handleEditorViewReady = useCallback((view: EditorView | null) => {
     editorViewRef.current = view;
@@ -122,12 +131,23 @@ function App() {
         insertAtCursor(editorViewRef.current, content);
       }
     },
+    model: chatModel,
   });
+
+  // Handler for changing chat model (from dropdown in chat panel)
+  const handleChatModelChange = useCallback(
+    (newModel: string) => {
+      setChatModel(newModel);
+      // Optionally persist to settings as the new default
+      updateAISettings({ model: newModel });
+    },
+    [updateAISettings],
+  );
 
   // Run clarity analysis on entry change
   useEffect(() => {
     async function runClarityAnalysis(entry: Entry) {
-      if (!entry.content.trim() || entry.entry_type !== 'requirement') {
+      if (!entry.content.trim() || entry.entry_type !== "requirement") {
         setDecorations([]);
         return;
       }
@@ -147,7 +167,8 @@ function App() {
 
   // Keyboard shortcut for saving
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => SaveShortcut(e, entryManagement.entry as Entry);
+    const handler = (e: KeyboardEvent) =>
+      SaveShortcut(e, entryManagement.entry as Entry);
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [entryManagement.entry]);
@@ -173,7 +194,7 @@ function App() {
       isInitialized.current = true;
 
       try {
-        console.log('🚀 Initializing StackScribe...');
+        console.log("🚀 Initializing StackScribe...");
 
         // Initialize settings from Tauri backend (gets AI_SERVICE_URL env var)
         await settingsService.initializeFromTauri();
@@ -181,11 +202,11 @@ function App() {
         const db = await getDb();
         console.log("✅ Database initialization completed successfully!");
 
-        const tables = await db.select(`
+        const tables = (await db.select(`
           SELECT name FROM sqlite_master
           WHERE type='table' AND name NOT LIKE 'sqlite_%'
-        `) as Array<{ name: string }>;
-        console.log('📊 Available tables:', tables);
+        `)) as Array<{ name: string }>;
+        console.log("📊 Available tables:", tables);
 
         setIsReady(true);
       } catch (error) {
@@ -204,7 +225,10 @@ function App() {
   };
 
   const handleArchiveCreate = async (newArchive: Archive, tomeName: string) => {
-    const result = await archiveManagement.handleArchiveCreate(newArchive, tomeName);
+    const result = await archiveManagement.handleArchiveCreate(
+      newArchive,
+      tomeName,
+    );
     if (result) {
       entryManagement.setEntries([result.entry]);
       entryManagement.setEntry(result.entry);
@@ -223,7 +247,10 @@ function App() {
     }
   };
 
-  const handleNewEntry = async (name: string, entryType: Entry["entry_type"]) => {
+  const handleNewEntry = async (
+    name: string,
+    entryType: Entry["entry_type"],
+  ) => {
     await entryManagement.handleNewEntry(name, entryType);
     setShowEntryPrompt(false);
   };
@@ -266,7 +293,9 @@ function App() {
           label="Entry Name"
           placeholder="Enter a name for the new entry"
           onClose={() => setShowEntryPrompt(false)}
-          onConfirm={(name, entryType) => handleNewEntry(name, entryType as Entry["entry_type"])}
+          onConfirm={(name, entryType) =>
+            handleNewEntry(name, entryType as Entry["entry_type"])
+          }
         />
       )}
 
@@ -276,7 +305,10 @@ function App() {
           label="Tome Name"
           placeholder="Enter a name for the new tome"
           onClose={() => setShowTomePrompt(false)}
-          onConfirm={(name) => { handleNewTome(name); setShowTomePrompt(false); }}
+          onConfirm={(name) => {
+            handleNewTome(name);
+            setShowTomePrompt(false);
+          }}
         />
       )}
 
@@ -359,7 +391,9 @@ function App() {
                 <ArchiveTree
                   archive={archiveManagement.archive}
                   tomes={archiveManagement.tomes}
-                  onTomeClick={(t: Tome, es: Entry[]) => archiveManagement.handleTomeClick(t, es)}
+                  onTomeClick={(t: Tome, es: Entry[]) =>
+                    archiveManagement.handleTomeClick(t, es)
+                  }
                   onEntryClick={entryManagement.handleEntryClick}
                   onRenameEntry={entryManagement.handleRenameEntry}
                   onDeleteEntry={entryManagement.handleDeleteEntry}
@@ -370,8 +404,16 @@ function App() {
               </div>
             )}
             <div className="panel-nav">
-              <NavIconButton icon={<GearIcon />} onClick={() => setShowPreferences(true)} variant="primary" />
-              <NavIconButton icon={<FilePlusIcon />} onClick={() => setShowEntryPrompt(true)} variant="primary" />
+              <NavIconButton
+                icon={<GearIcon />}
+                onClick={() => setShowPreferences(true)}
+                variant="primary"
+              />
+              <NavIconButton
+                icon={<FilePlusIcon />}
+                onClick={() => setShowEntryPrompt(true)}
+                variant="primary"
+              />
             </div>
           </div>
         )}
@@ -381,15 +423,15 @@ function App() {
           <TabBar
             tabs={entryManagement.tabbedEntries}
             activeTabId={entryManagement.activeTabId}
-            dirtyIds={entryManagement.dirtyEntries.map(e => e.id)}
+            dirtyIds={entryManagement.dirtyEntries.map((e) => e.id)}
             onSelect={entryManagement.handleTabSelect}
             onClose={entryManagement.handleTabClose}
             onReorder={entryManagement.handleTabReorder}
           />
           {entryManagement.activeTabId ? (
             entryManagement.tabbedEntries
-              .filter(e => e.id === entryManagement.activeTabId)
-              .map(e => (
+              .filter((e) => e.id === entryManagement.activeTabId)
+              .map((e) => (
                 <MdEditor
                   key={e.id}
                   value={entryManagement.markdown}
@@ -400,7 +442,13 @@ function App() {
               ))
           ) : (
             <div className="editor-placeholder">
-              <img className="logo-placeholder" src={logo} alt="StackScribe logo" width={120} height={120} />
+              <img
+                className="logo-placeholder"
+                src={logo}
+                alt="StackScribe logo"
+                width={120}
+                height={120}
+              />
               <p>Select a tome and entry to start writing</p>
             </div>
           )}
@@ -410,7 +458,7 @@ function App() {
         {previewVisible && (
           <>
             <div
-              className={`divider ${dragging === 'preview' ? 'dragging' : ''}`}
+              className={`divider ${dragging === "preview" ? "dragging" : ""}`}
               onMouseDown={() => startDragging("preview")}
               style={{ width: DIVIDER_SIZE }}
             />
@@ -439,7 +487,7 @@ function App() {
         {chatVisible && (
           <>
             <div
-              className={`divider ${dragging === 'chat' ? 'dragging' : ''}`}
+              className={`divider ${dragging === "chat" ? "dragging" : ""}`}
               onMouseDown={() => startDragging("chat")}
               style={{ width: DIVIDER_SIZE }}
             />
@@ -462,6 +510,9 @@ function App() {
                     insertAtCursor(editorViewRef.current, code);
                   }
                 }}
+                model={chatModel}
+                availableModels={LOCAL_AI_MODELS}
+                onModelChange={handleChatModelChange}
               />
             </div>
           </>

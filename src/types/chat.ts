@@ -1,12 +1,12 @@
-export type ChatMessageRole = 'user' | 'assistant' | 'system';
-export type ChatStatus = 'idle' | 'thinking' | 'generating' | 'error';
+export type ChatMessageRole = "user" | "assistant" | "system";
+export type ChatStatus = "idle" | "thinking" | "generating" | "error";
 
 export interface EditSuggestion {
   id: string;
   originalContent: string;
   suggestedContent: string;
   position?: { start: number; end: number };
-  status: 'pending' | 'applied' | 'rejected';
+  status: "pending" | "applied" | "rejected";
   description: string;
 }
 
@@ -43,11 +43,12 @@ export interface ChatRequest {
   messages: ChatMessage[];
   context: ChatContext;
   stream?: boolean;
+  model?: string; // Optional model override (e.g., "llama3.2:3b", "gemma2:2b")
 }
 
 export interface ChatResponse {
   message: ChatMessage;
-  status: 'success' | 'error';
+  status: "success" | "error";
   error?: string;
 }
 
@@ -55,6 +56,6 @@ export interface StreamingChunk {
   delta?: string;
   message?: ChatMessage;
   done: boolean;
-  status?: 'success' | 'error';
+  status?: "success" | "error";
   error?: string;
 }

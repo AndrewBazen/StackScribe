@@ -1,8 +1,11 @@
-use std::{process::{Command, Stdio}, env};
-use tauri::Emitter;
 use dotenvy::dotenv;
-use serde::{Deserialize, Serialize};
 use futures_util::StreamExt;
+use serde::{Deserialize, Serialize};
+use std::{
+    env,
+    process::{Command, Stdio},
+};
+use tauri::Emitter;
 
 // --------- Streaming Chat Types ---------
 
@@ -74,7 +77,8 @@ async fn echo(input: String) -> String {
 #[tauri::command]
 async fn run_code(code: String) -> Result<String, String> {
     let output = Command::new("node")
-        .arg("-e").arg(code)
+        .arg("-e")
+        .arg(code)
         .stdout(Stdio::piped())
         .output()
         .map_err(|e| e.to_string())?;
@@ -202,7 +206,7 @@ async fn startup_ai_service() -> Result<serde_json::Value, String> {
                 "connected": false,
                 "endpoint": ai_url
             }))
-        },
+        }
         Ok(response) => {
             println!("⚠️ AI service returned error: {}", response.status());
             Ok(serde_json::json!({
@@ -211,7 +215,7 @@ async fn startup_ai_service() -> Result<serde_json::Value, String> {
                 "connected": false,
                 "endpoint": ai_url
             }))
-        },
+        }
         Err(e) => {
             println!("❌ Cannot reach AI service at {}: {}", ai_url, e);
             Ok(serde_json::json!({
@@ -228,29 +232,38 @@ async fn startup_ai_service() -> Result<serde_json::Value, String> {
 #[tauri::command]
 async fn start_chat_stream(
     app: tauri::AppHandle,
+    request_id: Option<String>, // Accept request ID from frontend to avoid race condition
     messages: Vec<ChatMessage>,
     context: ChatContext,
+    model: Option<String>, // Optional model override (e.g., "llama3.2:3b", "gemma2:2b")
 ) -> Result<String, String> {
-    let ai_url = get_ai_service_url()
-        .ok_or("AI_SERVICE_URL not configured")?;
+    let ai_url = get_ai_service_url().ok_or("AI_SERVICE_URL not configured")?;
 
-    let request_id = uuid::Uuid::new_v4().to_string();
+    // Use frontend-provided ID or generate one
+    let request_id = request_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let request_id_clone = request_id.clone();
 
     println!("🚀 Starting chat stream with request_id: {}", request_id);
+    if let Some(ref m) = model {
+        println!("🤖 Using model: {}", m);
+    }
 
     // Spawn async task for streaming
     tauri::async_runtime::spawn(async move {
-        let result = stream_chat_internal(&app, &ai_url, &request_id_clone, messages, context).await;
+        let result =
+            stream_chat_internal(&app, &ai_url, &request_id_clone, messages, context, model).await;
 
         if let Err(e) = result {
             println!("❌ Stream error: {}", e);
-            let _ = app.emit("chat-complete", ChatCompleteEvent {
-                request_id: request_id_clone,
-                message: None,
-                status: "error".to_string(),
-                error: Some(e),
-            });
+            let _ = app.emit(
+                "chat-complete",
+                ChatCompleteEvent {
+                    request_id: request_id_clone,
+                    message: None,
+                    status: "error".to_string(),
+                    error: Some(e),
+                },
+            );
         }
     });
 
@@ -263,14 +276,23 @@ async fn stream_chat_internal(
     request_id: &str,
     messages: Vec<ChatMessage>,
     context: ChatContext,
+    model: Option<String>,
 ) -> Result<(), String> {
     let client = reqwest::Client::new();
 
-    let payload = serde_json::json!({
+    let mut payload = serde_json::json!({
         "messages": messages,
         "context": context,
         "stream": true
     });
+
+    // Add model to payload if specified
+    if let Some(model_name) = model {
+        payload
+            .as_object_mut()
+            .unwrap()
+            .insert("model".to_string(), serde_json::json!(model_name));
+    }
 
     println!("📤 Sending request to {}/api/chat/stream", ai_url);
 
@@ -292,12 +314,34 @@ async fn stream_chat_internal(
 
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result.map_err(|e| e.to_string())?;
-        buffer.push_str(&String::from_utf8_lossy(&chunk));
+        let chunk_str = String::from_utf8_lossy(&chunk);
+        println!(
+            "📥 Raw chunk received ({} bytes): {:?}",
+            chunk.len(),
+            chunk_str
+        );
+        buffer.push_str(&chunk_str);
+        println!(
+            "📦 Buffer now ({} bytes): {:?}",
+            buffer.len(),
+            &buffer[..buffer.len().min(200)]
+        );
 
-        // Process complete SSE lines (data: {...}\n\n)
-        while let Some(line_end) = buffer.find("\n\n") {
+        // Process complete SSE lines (data: {...}\n\n or data: {...}\n)
+        // Determine if we have double newline or single newline
+        while let Some((line_end, skip_len)) = buffer.find("\n\n").map(|p| (p, 2)).or_else(|| {
+            // Fallback: try single newline if we have a complete data line
+            if let Some(pos) = buffer.find('\n') {
+                let line = &buffer[..pos];
+                if line.starts_with("data: ") && line.contains('}') {
+                    return Some((pos, 1));
+                }
+            }
+            None
+        }) {
             let line = buffer[..line_end].to_string();
-            buffer = buffer[line_end + 2..].to_string();
+            buffer = buffer[line_end + skip_len..].to_string();
+            println!("📝 Processing line: {:?}", &line[..line.len().min(100)]);
 
             // Skip empty lines
             if line.trim().is_empty() {
@@ -311,26 +355,32 @@ async fn stream_chat_internal(
                     // Handle delta chunks
                     if let Some(delta) = data.get("delta").and_then(|d| d.as_str()) {
                         full_content.push_str(delta);
-                        let _ = app.emit("chat-chunk", ChatChunkEvent {
-                            request_id: request_id.to_string(),
-                            delta: delta.to_string(),
-                        });
+                        let _ = app.emit(
+                            "chat-chunk",
+                            ChatChunkEvent {
+                                request_id: request_id.to_string(),
+                                delta: delta.to_string(),
+                            },
+                        );
                     }
 
                     // Handle completion
                     if data.get("done").and_then(|d| d.as_bool()) == Some(true) {
-                        let status = data.get("status")
+                        let status = data
+                            .get("status")
                             .and_then(|s| s.as_str())
                             .unwrap_or("success")
                             .to_string();
 
-                        let error = data.get("error")
+                        let error = data
+                            .get("error")
                             .and_then(|e| e.as_str())
                             .map(|s| s.to_string());
 
                         let message = if status == "success" {
                             Some(ChatMessage {
-                                id: data.get("message")
+                                id: data
+                                    .get("message")
                                     .and_then(|m| m.get("id"))
                                     .and_then(|i| i.as_str())
                                     .map(|s| s.to_string()),
@@ -343,12 +393,15 @@ async fn stream_chat_internal(
                         };
 
                         println!("✅ Chat stream complete, status: {}", status);
-                        let _ = app.emit("chat-complete", ChatCompleteEvent {
-                            request_id: request_id.to_string(),
-                            message,
-                            status,
-                            error,
-                        });
+                        let _ = app.emit(
+                            "chat-complete",
+                            ChatCompleteEvent {
+                                request_id: request_id.to_string(),
+                                message,
+                                status,
+                                error,
+                            },
+                        );
                         return Ok(());
                     }
                 }
@@ -358,17 +411,20 @@ async fn stream_chat_internal(
 
     // If we exit the loop without a done message, emit completion with what we have
     println!("⚠️ Stream ended without explicit done message");
-    let _ = app.emit("chat-complete", ChatCompleteEvent {
-        request_id: request_id.to_string(),
-        message: Some(ChatMessage {
-            id: Some(uuid::Uuid::new_v4().to_string()),
-            role: "assistant".to_string(),
-            content: full_content,
-            timestamp: Some(chrono::Utc::now().to_rfc3339()),
-        }),
-        status: "success".to_string(),
-        error: None,
-    });
+    let _ = app.emit(
+        "chat-complete",
+        ChatCompleteEvent {
+            request_id: request_id.to_string(),
+            message: Some(ChatMessage {
+                id: Some(uuid::Uuid::new_v4().to_string()),
+                role: "assistant".to_string(),
+                content: full_content,
+                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+            }),
+            status: "success".to_string(),
+            error: None,
+        },
+    );
 
     Ok(())
 }
@@ -383,10 +439,7 @@ async fn stream_chat_internal(
 //     }
 //     let absolute_path = std::path::Path::new(&cwd).join(path);
 //     return absolute_path;
-// }   
-
-
-
+// }
 
 // --------- main entry point ---------
 
@@ -398,10 +451,17 @@ pub fn run() {
     // Embed the migration SQL at compile-time so it's always available, even on mobile
     // where the external file isn’t packaged inside the APK.
     const INITIAL_SCHEMA_SQL: &str = include_str!("../../data/migrations/001_initial_schema.sql");
-    const REQUIREMENT_CLARITY_SQL: &str = include_str!("../../data/migrations/002_add_requirement_clarity.sql");
-    println!("📄 Embedded initial schema SQL length: {} bytes", INITIAL_SCHEMA_SQL.len());
-    println!("📄 Embedded requirement clarity SQL length: {} bytes", REQUIREMENT_CLARITY_SQL.len());
- 
+    const REQUIREMENT_CLARITY_SQL: &str =
+        include_str!("../../data/migrations/002_add_requirement_clarity.sql");
+    println!(
+        "📄 Embedded initial schema SQL length: {} bytes",
+        INITIAL_SCHEMA_SQL.len()
+    );
+    println!(
+        "📄 Embedded requirement clarity SQL length: {} bytes",
+        REQUIREMENT_CLARITY_SQL.len()
+    );
+
     let migrations = vec![
         tauri_plugin_sql::Migration {
             version: 1,
@@ -416,31 +476,32 @@ pub fn run() {
             kind: tauri_plugin_sql::MigrationKind::Up,
         },
     ];
-    
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_sql::Builder::default()
-            .add_migrations("sqlite:stackscribe.db", migrations)
-            .build())
+        .plugin(
+            tauri_plugin_sql::Builder::default()
+                .add_migrations("sqlite:stackscribe.db", migrations)
+                .build(),
+        )
         .setup(|app| {
             // Auto-start AI service on app startup
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 // Give the app a moment to fully initialize
                 tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-                
+
                 match startup_ai_service().await {
                     Ok(result) => {
                         println!("AI service startup result: {}", result);
-                        
+
                         // Emit startup status to frontend
                         if let Err(e) = app_handle.emit("ai-service-startup", &result) {
                             println!("Failed to emit startup status: {}", e);
                         }
-                    },
+                    }
                     Err(e) => {
                         println!("AI service startup failed: {}", e);
                         let error_result = serde_json::json!({
@@ -448,17 +509,27 @@ pub fn run() {
                             "message": e,
                             "auto_started": false
                         });
-                        
-                        if let Err(emit_error) = app_handle.emit("ai-service-startup", &error_result) {
+
+                        if let Err(emit_error) =
+                            app_handle.emit("ai-service-startup", &error_result)
+                        {
                             println!("Failed to emit startup error: {}", emit_error);
                         }
                     }
                 }
             });
-            
+
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![echo, run_code, get_current_dir, get_ai_service_config, python_service_status, startup_ai_service, start_chat_stream])
+        .invoke_handler(tauri::generate_handler![
+            echo,
+            run_code,
+            get_current_dir,
+            get_ai_service_config,
+            python_service_status,
+            startup_ai_service,
+            start_chat_stream
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -4,7 +4,12 @@ import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { Entry } from "../types/entry";
 import { Tome } from "../types/tome";
 import { Archive } from "../types/archive";
-import { ChatMessage, ChatStatus, ChatContext, EditSuggestion } from "../types/chat";
+import {
+  ChatMessage,
+  ChatStatus,
+  ChatContext,
+  EditSuggestion,
+} from "../types/chat";
 
 interface AIChatState {
   messages: ChatMessage[];
@@ -28,12 +33,21 @@ interface UseAIChatOptions {
   markdown: string;
   onApplyEdit: (newContent: string) => void;
   onInsertContent: (content: string, position?: number) => void;
+  model?: string; // Optional model override (e.g., "llama3.2:3b", "gemma2:2b")
 }
 
 export function useAIChat(
-  options: UseAIChatOptions
+  options: UseAIChatOptions,
 ): AIChatState & AIChatActions {
-  const { entry, tome, archive, markdown, onApplyEdit, onInsertContent } = options;
+  const {
+    entry,
+    tome,
+    archive,
+    markdown,
+    onApplyEdit,
+    onInsertContent,
+    model,
+  } = options;
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [status, setStatus] = useState<ChatStatus>("idle");
@@ -58,7 +72,7 @@ export function useAIChat(
 
   // Cleanup function for event listeners
   const cleanupListeners = useCallback(() => {
-    unlistenersRef.current.forEach(fn => fn());
+    unlistenersRef.current.forEach((fn) => fn());
     unlistenersRef.current = [];
     if (rafIdRef.current !== null) {
       cancelAnimationFrame(rafIdRef.current);
@@ -73,54 +87,53 @@ export function useAIChat(
     };
   }, [cleanupListeners]);
 
-  const sendMessage = useCallback(async (content: string) => {
-    if (!content.trim()) return;
+  const sendMessage = useCallback(
+    async (content: string) => {
+      if (!content.trim()) return;
 
-    // Cleanup any previous request
-    cleanupListeners();
+      // Cleanup any previous request
+      cleanupListeners();
 
-    lastUserMessageRef.current = content;
-    setError(null);
-    setStatus("thinking");
+      lastUserMessageRef.current = content;
+      setError(null);
+      setStatus("thinking");
 
-    // Add user message
-    const userMessage: ChatMessage = {
-      id: crypto.randomUUID(),
-      role: "user",
-      content: content.trim(),
-      timestamp: new Date().toISOString(),
-    };
+      // Add user message
+      const userMessage: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: "user",
+        content: content.trim(),
+        timestamp: new Date().toISOString(),
+      };
 
-    setMessages(prev => [...prev, userMessage]);
+      setMessages((prev) => [...prev, userMessage]);
 
-    try {
-      const context = buildContext();
-      const allMessages = [...messages, userMessage];
+      try {
+        const context = buildContext();
+        const allMessages = [...messages, userMessage];
 
-      setStatus("generating");
-      setStreamingContent("");
-      streamingContentRef.current = "";
+        setStatus("generating");
+        setStreamingContent("");
+        streamingContentRef.current = "";
 
-      console.log("🔄 Starting chat stream via Tauri...");
+        console.log("🔄 Starting chat stream via Tauri...");
 
-      // Start the stream and get request ID
-      const requestId = await invoke<string>('start_chat_stream', {
-        messages: allMessages.map(m => ({
-          id: m.id,
-          role: m.role,
-          content: m.content,
-          timestamp: m.timestamp,
-        })),
-        context,
-      });
+        // Generate request ID on frontend to avoid race condition
+        const requestId = crypto.randomUUID();
+        activeRequestIdRef.current = requestId;
+        console.log("📡 Generated request ID:", requestId);
 
-      activeRequestIdRef.current = requestId;
-      console.log("📡 Got request ID:", requestId);
-
-      // Listen for chunk events
-      const unlistenChunk = await listen<{ request_id: string; delta: string }>(
-        'chat-chunk',
-        (event) => {
+        // Set up event listeners BEFORE invoking the command to avoid race condition
+        const unlistenChunk = await listen<{
+          request_id: string;
+          delta: string;
+        }>("chat-chunk", (event) => {
+          console.log(
+            "📥 Received chat-chunk:",
+            event.payload.request_id,
+            "delta length:",
+            event.payload.delta?.length,
+          );
           if (event.payload.request_id === activeRequestIdRef.current) {
             streamingContentRef.current += event.payload.delta;
 
@@ -132,51 +145,91 @@ export function useAIChat(
               });
             }
           }
-        }
-      );
-      unlistenersRef.current.push(unlistenChunk);
+        });
+        unlistenersRef.current.push(unlistenChunk);
 
-      // Listen for completion event
-      const unlistenComplete = await listen<{
-        request_id: string;
-        message: ChatMessage | null;
-        status: string;
-        error: string | null;
-      }>('chat-complete', (event) => {
-        if (event.payload.request_id === activeRequestIdRef.current) {
-          console.log("✅ Chat complete:", event.payload.status);
+        // Listen for completion event
+        const unlistenComplete = await listen<{
+          request_id: string;
+          message: ChatMessage | null;
+          status: string;
+          error: string | null;
+        }>("chat-complete", (event) => {
+          console.log(
+            "📥 Received chat-complete:",
+            event.payload.request_id,
+            "status:",
+            event.payload.status,
+            "has message:",
+            !!event.payload.message,
+          );
+          if (event.payload.request_id === activeRequestIdRef.current) {
+            console.log(
+              "✅ Chat complete:",
+              event.payload.status,
+              "content length:",
+              event.payload.message?.content?.length,
+            );
 
-          // Cancel any pending animation frame
-          if (rafIdRef.current !== null) {
-            cancelAnimationFrame(rafIdRef.current);
-            rafIdRef.current = null;
+            // Cancel any pending animation frame
+            if (rafIdRef.current !== null) {
+              cancelAnimationFrame(rafIdRef.current);
+              rafIdRef.current = null;
+            }
+
+            // Cleanup listeners
+            cleanupListeners();
+            activeRequestIdRef.current = null;
+
+            if (event.payload.status === "error") {
+              setError(event.payload.error || "Unknown error");
+              setStreamingContent("");
+              setStatus("error");
+            } else if (event.payload.message) {
+              setMessages((prev) => [...prev, event.payload.message!]);
+              setStreamingContent("");
+              setStatus("idle");
+            } else {
+              // No message and no error - something went wrong
+              console.warn("⚠️ Chat complete but no message received");
+              setStreamingContent("");
+              setStatus("idle");
+            }
           }
+        });
+        unlistenersRef.current.push(unlistenComplete);
 
-          // Cleanup listeners
-          cleanupListeners();
-          activeRequestIdRef.current = null;
-
-          if (event.payload.status === "error") {
-            setError(event.payload.error || "Unknown error");
-            setStreamingContent("");
-            setStatus("error");
-          } else if (event.payload.message) {
-            setMessages(prev => [...prev, event.payload.message!]);
-            setStreamingContent("");
-            setStatus("idle");
-          }
-        }
-      });
-      unlistenersRef.current.push(unlistenComplete);
-
-    } catch (err) {
-      cleanupListeners();
-      const errorMessage = err instanceof Error ? err.message : "Unknown error";
-      setStreamingContent("");
-      setError(errorMessage);
-      setStatus("error");
-    }
-  }, [messages, buildContext, cleanupListeners]);
+        // NOW start the stream after listeners are ready
+        // Only send model if it's not "auto" - let service use its default
+        const modelToSend = model && model !== "auto" ? model : undefined;
+        const returnedRequestId = await invoke<string>("start_chat_stream", {
+          requestId, // Pass the frontend-generated ID
+          messages: allMessages.map((m) => ({
+            id: m.id,
+            role: m.role,
+            content: m.content,
+            timestamp: m.timestamp,
+          })),
+          context,
+          model: modelToSend,
+        });
+        console.log(
+          "📡 Stream started, returned ID:",
+          returnedRequestId,
+          "model:",
+          modelToSend || "auto (service default)",
+        );
+      } catch (err) {
+        cleanupListeners();
+        const errorMessage =
+          err instanceof Error ? err.message : "Unknown error";
+        setStreamingContent("");
+        setError(errorMessage);
+        setStatus("error");
+      }
+    },
+    [messages, buildContext, cleanupListeners],
+  );
 
   const clearHistory = useCallback(() => {
     setMessages([]);
@@ -184,56 +237,64 @@ export function useAIChat(
     setError(null);
   }, []);
 
-  const findEditSuggestion = useCallback((suggestionId: string): { message: ChatMessage; suggestion: EditSuggestion } | null => {
-    for (const msg of messages) {
-      if (msg.metadata?.editSuggestion?.id === suggestionId) {
-        return { message: msg, suggestion: msg.metadata.editSuggestion };
-      }
-    }
-    return null;
-  }, [messages]);
-
-  const applyEditSuggestion = useCallback((suggestionId: string) => {
-    const found = findEditSuggestion(suggestionId);
-    if (!found) return;
-
-    const { suggestion } = found;
-
-    if (suggestion.position && markdown) {
-      // Replace at specific position
-      const newContent =
-        markdown.slice(0, suggestion.position.start) +
-        suggestion.suggestedContent +
-        markdown.slice(suggestion.position.end);
-      onApplyEdit(newContent);
-    } else {
-      // Insert the suggested content
-      onInsertContent(suggestion.suggestedContent);
-    }
-
-    // Update suggestion status
-    setMessages(prev =>
-      prev.map(msg => {
+  const findEditSuggestion = useCallback(
+    (
+      suggestionId: string,
+    ): { message: ChatMessage; suggestion: EditSuggestion } | null => {
+      for (const msg of messages) {
         if (msg.metadata?.editSuggestion?.id === suggestionId) {
-          return {
-            ...msg,
-            metadata: {
-              ...msg.metadata,
-              editSuggestion: {
-                ...msg.metadata.editSuggestion,
-                status: "applied" as const,
-              },
-            },
-          };
+          return { message: msg, suggestion: msg.metadata.editSuggestion };
         }
-        return msg;
-      })
-    );
-  }, [findEditSuggestion, markdown, onApplyEdit, onInsertContent]);
+      }
+      return null;
+    },
+    [messages],
+  );
+
+  const applyEditSuggestion = useCallback(
+    (suggestionId: string) => {
+      const found = findEditSuggestion(suggestionId);
+      if (!found) return;
+
+      const { suggestion } = found;
+
+      if (suggestion.position && markdown) {
+        // Replace at specific position
+        const newContent =
+          markdown.slice(0, suggestion.position.start) +
+          suggestion.suggestedContent +
+          markdown.slice(suggestion.position.end);
+        onApplyEdit(newContent);
+      } else {
+        // Insert the suggested content
+        onInsertContent(suggestion.suggestedContent);
+      }
+
+      // Update suggestion status
+      setMessages((prev) =>
+        prev.map((msg) => {
+          if (msg.metadata?.editSuggestion?.id === suggestionId) {
+            return {
+              ...msg,
+              metadata: {
+                ...msg.metadata,
+                editSuggestion: {
+                  ...msg.metadata.editSuggestion,
+                  status: "applied" as const,
+                },
+              },
+            };
+          }
+          return msg;
+        }),
+      );
+    },
+    [findEditSuggestion, markdown, onApplyEdit, onInsertContent],
+  );
 
   const rejectEditSuggestion = useCallback((suggestionId: string) => {
-    setMessages(prev =>
-      prev.map(msg => {
+    setMessages((prev) =>
+      prev.map((msg) => {
         if (msg.metadata?.editSuggestion?.id === suggestionId) {
           return {
             ...msg,
@@ -247,7 +308,7 @@ export function useAIChat(
           };
         }
         return msg;
-      })
+      }),
     );
   }, []);
 
@@ -255,7 +316,7 @@ export function useAIChat(
     if (!lastUserMessageRef.current) return;
 
     // Remove the last assistant message if it exists
-    setMessages(prev => {
+    setMessages((prev) => {
       const lastMsg = prev[prev.length - 1];
       if (lastMsg?.role === "assistant") {
         return prev.slice(0, -1);

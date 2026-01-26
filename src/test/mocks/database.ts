@@ -1,14 +1,14 @@
-import { vi } from 'vitest';
+import { vi } from "vitest";
 
 // Mock database instance
 export const mockDb = {
   execute: vi.fn(() => Promise.resolve()),
-  select: vi.fn(() => Promise.resolve([])),
+  select: vi.fn(() => Promise.resolve([] as unknown[])),
 };
 
 // Helper to mock select query results
 export function mockSelectResult<T>(result: T[]) {
-  mockDb.select.mockResolvedValueOnce(result);
+  mockDb.select.mockResolvedValueOnce(result as unknown[]);
 }
 
 // Helper to mock execute to succeed

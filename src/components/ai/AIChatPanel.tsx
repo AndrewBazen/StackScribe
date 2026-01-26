@@ -1,10 +1,15 @@
-import React, { useRef, useEffect } from 'react';
-import { ChatMessage as ChatMessageType, ChatStatus } from '../../types/chat';
-import { ChatMessage } from './ChatMessage';
-import { ChatInput } from './ChatInput';
-import { ChatStatusIndicator } from './ChatStatusIndicator';
-import { TrashIcon, ChatBubbleIcon } from '@radix-ui/react-icons';
-import '../../styles/AIChatPanel.css';
+import React, { useRef, useEffect } from "react";
+import { ChatMessage as ChatMessageType, ChatStatus } from "../../types/chat";
+import { ChatMessage } from "./ChatMessage";
+import { ChatInput } from "./ChatInput";
+import { ChatStatusIndicator } from "./ChatStatusIndicator";
+import { TrashIcon, ChatBubbleIcon } from "@radix-ui/react-icons";
+import "../../styles/AIChatPanel.css";
+
+interface ModelOption {
+  id: string;
+  name: string;
+}
 
 interface AIChatPanelProps {
   messages: ChatMessageType[];
@@ -17,6 +22,10 @@ interface AIChatPanelProps {
   onRejectEdit: (suggestionId: string) => void;
   onRetry: () => Promise<void>;
   onInsertCode?: (code: string) => void;
+  // Model selection props
+  model?: string;
+  availableModels?: ModelOption[];
+  onModelChange?: (model: string) => void;
 }
 
 export const AIChatPanel: React.FC<AIChatPanelProps> = ({
@@ -29,14 +38,17 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
   onApplyEdit,
   onRejectEdit,
   onRetry,
-  onInsertCode
+  onInsertCode,
+  model,
+  availableModels,
+  onModelChange,
 }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const isLoading = status === 'thinking' || status === 'generating';
+  const isLoading = status === "thinking" || status === "generating";
 
   // Auto-scroll to bottom when new messages arrive or streaming updates
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, status, streamingContent]);
 
   return (
@@ -47,6 +59,21 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
           <h3>AI Assistant</h3>
         </div>
         <div className="chat-header-right">
+          {/* Model selector dropdown */}
+          {availableModels && availableModels.length > 0 && onModelChange && (
+            <select
+              className="chat-model-select"
+              value={model || ""}
+              onChange={(e) => onModelChange(e.target.value)}
+              title="Select AI model"
+            >
+              {availableModels.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+          )}
           {messages.length > 0 && (
             <button
               className="chat-header-btn"
@@ -66,12 +93,19 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
               <ChatBubbleIcon />
             </div>
             <h4>Start a conversation</h4>
-            <p>Ask questions about your document, request edits, or generate new content.</p>
+            <p>
+              Ask questions about your document, request edits, or generate new
+              content.
+            </p>
             <div className="chat-suggestions">
               <button onClick={() => onSendMessage("Summarize this document")}>
                 Summarize this document
               </button>
-              <button onClick={() => onSendMessage("Improve the writing in this document")}>
+              <button
+                onClick={() =>
+                  onSendMessage("Improve the writing in this document")
+                }
+              >
                 Improve the writing
               </button>
               <button onClick={() => onSendMessage("What are the key points?")}>
@@ -106,11 +140,7 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
           </div>
         )}
 
-        <ChatStatusIndicator
-          status={status}
-          error={error}
-          onRetry={onRetry}
-        />
+        <ChatStatusIndicator status={status} error={error} onRetry={onRetry} />
 
         <div ref={messagesEndRef} />
       </div>
